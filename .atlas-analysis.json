@@ -1,0 +1,106 @@
+{
+  "projectType": "data-platform",
+  "projectName": "Magic ObjDB: The Poly Deck Engine",
+  "projectDescription": "A Java JPA/ObjectDB demonstration project that models a Magic: The Gathering card database with polymorphic entities, CRUD operations, and advanced JPA lifecycle patterns.",
+  "theme": "linden",
+  "primaryColor": "#4A1A8A",
+  "lightColor": "#7B3FC4",
+  "darkColor": "#2A0A5A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart"]
+          },
+          {
+            "group": "Data Model",
+            "pages": [
+              "data-model/overview",
+              "data-model/carta",
+              "data-model/criatura",
+              "data-model/terra",
+              "data-model/encanteri",
+              "data-model/mazo",
+              "data-model/jugador",
+              "data-model/enums"
+            ]
+          },
+          {
+            "group": "JPA Concepts",
+            "pages": [
+              "jpa/persistence-config",
+              "jpa/entity-lifecycle",
+              "jpa/l1-cache",
+              "jpa/dirty-checking",
+              "jpa/detached-merge",
+              "jpa/orphan-removal"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/importing-cards",
+              "guides/querying",
+              "guides/building-decks"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Service Layer",
+            "pages": [
+              "api/gestor-cartas",
+              "api/lector-ficheros",
+              "api/jpa-util"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Polymorphic JPA entity hierarchy with JOINED inheritance (Carta → Criatura, Terra, Encanteri)",
+    "ObjectDB embedded object database with JPA 2 interface",
+    "Demonstrates JPA entity lifecycle: managed, detached, and merge patterns",
+    "First-level (L1) cache identity guarantee demonstration",
+    "Dirty-checking automatic flush vs. explicit detach-and-merge update strategies",
+    "Orphan removal cascades: removing a Mazo from a Jugador's list auto-deletes it",
+    "JPQL aggregate and path-expression queries (AVG, deep joins across OneToMany/ManyToMany)",
+    "File-based seed data loader (pipe-delimited cartes.txt with multi-line description support)"
+  ],
+  "publicApiSurface": [
+    "GestorCartas(EntityManager em)",
+    "GestorCartas.importarCartes(String rutaArxiu): void",
+    "GestorCartas.crearJugadorAmbMazo(String nick, int nivell, String nomMazo, List<Carta> cartesMazo): void",
+    "GestorCartas.testLlistarTotesLesCartes(): List<Carta>",
+    "GestorCartas.obtenirTotesLesCartes(): List<Carta>",
+    "GestorCartas.obtenirTotsElsJugadors(): List<Jugador>",
+    "GestorCartas.buscarPerId(long id): Carta",
+    "GestorCartas.buscarNomsCriaturesVoladoresFosques(): List<String>",
+    "GestorCartas.calcularMitjanaForcaCriaturesJugador(String nickJugador): Double",
+    "GestorCartas.buscarEncanterisIncolorsCars(): List<Encanteri>",
+    "GestorCartas.actualitzarDescripcioManaged(long idCarta, String novaDescripcio): void",
+    "GestorCartas.actualitzarNomDetached(long idCarta, String nouNom): void",
+    "GestorCartas.eliminarCartaPerId(long idCarta): void",
+    "GestorCartas.eliminarMazoOrphanRemoval(long idJugador, int indexMazoAEsborrar): void",
+    "GestorCartas.netejarBaseDades(): void",
+    "LectorFicheros.llegirCartes(String rutaArxiu): List<Carta>",
+    "JPAUtil.getEntityManager(): EntityManager",
+    "JPAUtil.shutdown(): void",
+    "Carta (abstract @Entity, JOINED inheritance)",
+    "Criatura extends Carta (@Entity — forca, resistencia, tipusCriatura, vola)",
+    "Terra extends Carta (@Entity — produccio: Color, esBasica: boolean)",
+    "Encanteri extends Carta (@Entity — tipus: String, esInstantani: boolean)",
+    "Mazo (@Entity — nom, dataCreacio, cartes: List<Carta> @ManyToMany)",
+    "Jugador (@Entity — nick, nivell, mazos: List<Mazo> @OneToMany orphanRemoval, colleccio: List<Carta> @ManyToMany)",
+    "CostMana (@Embeddable — blanc, blau, negre, vermell, verd, incolor)",
+    "Color (enum: BLANC, BLAU, NEGRE, VERMELL, VERD, INCOLOR)",
+    "Raresa (enum: COMUNA, INFREQÜENT, RARA, MITICA)"
+  ]
+}
