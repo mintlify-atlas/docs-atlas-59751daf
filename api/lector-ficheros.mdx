@@ -30,8 +30,8 @@ CRIATURA | nom | descripcio | raresa | cost | forca | resistencia | tipusCriatur
 | 0 | `CRIATURA` | literal | Card-type discriminator |
 | 1 | `nom` | String | Card name |
 | 2 | `descripcio` | String | Flavour / rules text |
-| 3 | `raresa` | String | One of `COMUN`, `INCOMUN`, `RAR`, `MITIC` (case-insensitive) |
-| 4 | `cost` | String | Mana cost — comma-separated integers: `negre,vermell,verd,blanc,blau,incolor` |
+| 3 | `raresa` | String | One of `COMUNA`, `INFREQÜENT`, `RARA`, `MITICA` (case-insensitive via `Raresa.valueOf()`) |
+| 4 | `cost` | String | Mana cost — comma-separated integers: `Blau,Negre,Vermell,Verd,Blanc,Incolor` |
 | 5 | `forca` | int | Power value |
 | 6 | `resistencia` | int | Toughness value |
 | 7 | `tipusCriatura` | String | Creature subtype (e.g. `"Drac"`) |
@@ -40,7 +40,7 @@ CRIATURA | nom | descripcio | raresa | cost | forca | resistencia | tipusCriatur
 ### TERRA
 
 ```
-TERRA | nom | descripcio | raresa | color | esTap
+TERRA | nom | descripcio | raresa | colorProduccio | esBasica
 ```
 
 | Position | Field | Type | Notes |
@@ -49,8 +49,8 @@ TERRA | nom | descripcio | raresa | color | esTap
 | 1 | `nom` | String | Card name |
 | 2 | `descripcio` | String | Flavour / rules text |
 | 3 | `raresa` | String | Rarity value |
-| 4 | `color` | String | One of the `Color` enum values (case-insensitive) |
-| 5 | `esTap` | boolean | Whether the land enters tapped |
+| 4 | `colorProduccio` | String | One of the `Color` enum values: `BLANC`, `BLAU`, `NEGRE`, `VERMELL`, `VERD`, `INCOLOR` (case-insensitive via `Color.valueOf()`) |
+| 5 | `esBasica` | boolean | `true` for basic lands, `false` for non-basic |
 
 <Note>
   `Terra` cards receive a zero-cost `CostMana(0,0,0,0,0,0)` automatically — the mana-cost field is not present in the file for this type.
@@ -77,10 +77,12 @@ ENCANTERI | nom | descripcio | raresa | cost | tipus | esInstantani
 The `cost` field for `CRIATURA` and `ENCANTERI` is a comma-separated string of six integers:
 
 ```
-negre, vermell, verd, blanc, blau, incolor
+Blau, Negre, Vermell, Verd, Blanc, Incolor
 ```
 
-Example: `"2,0,0,0,1,0"` → 2 black, 0 red, 0 green, 0 white, 1 blue, 0 colorless.
+Example: `"0,0,2,0,0,4"` → Blau=0, Negre=0, Vermell=2, Verd=0, Blanc=0, Incolor=4.
+
+Note: The `parsejarCost()` method remaps these to the `CostMana(blanc, blau, negre, vermell, verd, incolor)` constructor — the column order in the file differs from the constructor argument order.
 
 ### Multi-line descriptions
 

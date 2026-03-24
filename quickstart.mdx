@@ -119,7 +119,7 @@ Before you begin, make sure you have the following installed:
     |--------|--------|-------------|
     | 1 | List all cards | Fetches and prints every `Carta` entity in the database. |
     | 2 | L1 cache test | Looks up a card by its numeric ID twice within the same `EntityManager` session to demonstrate that the second retrieval is served from the first-level (persistence context) cache without hitting the store. |
-    | 3 | Flying dark creatures query | Runs a JPQL query that returns the names of all `Criatura` entities that have `vola = true` and a black mana cost greater than zero. |
+    | 3 | Flying dark creatures query | Runs a JPQL query that returns the names of all `Criatura` entities that have `vola = true` and a black mana cost greater than 2 (`cost.negre > 2`). |
     | 4 | Average creature strength for a player | Given a player nick, calculates the average `força` (power) of all creatures in that player's decks using a JPQL aggregate query. |
     | 5 | Colorless expensive enchantments | Queries for `Encanteri` entities that have a non-zero colorless mana cost and zero cost in all five colours — i.e., purely colorless and costly spells. |
 

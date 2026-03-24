@@ -39,7 +39,7 @@ description: "Abstract JPA base entity for all card types in the Magic ObjDB dec
 </ResponseField>
 
 <ResponseField name="edicio" type="String">
-  The card set/edition this card belongs to (e.g. `"Alpha"`, `"Core 2024"`).
+  The card set/edition this card belongs to. When cards are loaded from `cartes.txt` via `LectorFicheros`, this field is hardcoded to `"Core Set 2026"` for every card.
 </ResponseField>
 
 <ResponseField name="cost" type="CostMana">
