@@ -1,0 +1,124 @@
+---
+title: "Mazo (deck)"
+description: "JPA entity representing a named card deck. Holds cards via a ManyToMany relationship with Carta."
+---
+
+`Mazo` is a standalone `@Entity` (it does not participate in the `Carta` inheritance hierarchy). It represents a named deck of cards created by a player on a specific date.
+
+## Fields
+
+<ResponseField name="id" type="Long">
+  Auto-generated primary key (`@Id @GeneratedValue`). Read-only after persist.
+</ResponseField>
+
+<ResponseField name="nom" type="String">
+  Human-readable name of the deck (e.g. `"Red Aggro"`, `"Control Blau"`).
+</ResponseField>
+
+<ResponseField name="dataCreacio" type="LocalDate">
+  The date the deck was created. Stored as a `LocalDate` (mapped to a `DATE` column by ObjectDB/JPA).
+</ResponseField>
+
+<ResponseField name="cartes" type="List<Carta>">
+  The cards in this deck. The relationship is `@ManyToMany(cascade = CascadeType.PERSIST)`.
+
+  - Multiple decks can reference the **same `Carta` instance** — no card rows are duplicated.
+  - `CascadeType.PERSIST` means that when a `Mazo` is persisted, any new (transient) `Carta` objects in the list are also persisted automatically.
+  - There is **no `CascadeType.REMOVE`** — removing a deck does not delete the card objects.
+</ResponseField>
+
+## ManyToMany relationship
+
+```
+Mazo ────────────────── Carta
+  (1)  @ManyToMany  (*)
+       cascade=PERSIST
+```
+
+JPA generates a **join table** (e.g. `Mazo_Carta`) with two foreign key columns:
+
+| Column | References |
+|--------|------------|
+| `Mazo_id` | `Mazo.id` |
+| `cartes_id` | `Carta.id` |
+
+This allows the same card to appear in many decks:
+
+```java
+Criatura drac = new Criatura(/* ... */);
+
+Mazo deck1 = new Mazo("Deck Vermell", LocalDate.now());
+deck1.addCarta(drac);
+
+Mazo deck2 = new Mazo("Deck Mixt", LocalDate.now());
+deck2.addCarta(drac); // same instance, shared in both decks
+```
+
+<Warning>
+  Because the relationship is unidirectional (only `Mazo` holds the reference), there is no inverse `mappedBy`. If you delete a card directly from the database outside JPA, you must also clean up the join table rows manually.
+</Warning>
+
+## Helper methods
+
+<ResponseField name="addCarta(Carta carta)" type="void">
+  Appends a card to the `cartes` list. Convenience wrapper around `cartes.add(carta)`.
+</ResponseField>
+
+<ResponseField name="removeCarta(Carta carta)" type="void">
+  Removes a card from the `cartes` list. Uses `List.remove()` which relies on object identity/`equals`.
+</ResponseField>
+
+## Source code
+
+```java Mazo.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.model;
+
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.persistence.CascadeType;
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.Id;
+import javax.persistence.ManyToMany;
+
+@Entity
+public class Mazo {
+
+    @Id
+    @GeneratedValue
+    private Long id;
+    private String nom;
+    private LocalDate dataCreacio;
+
+    @ManyToMany(cascade = CascadeType.PERSIST)
+    private List<Carta> cartes = new ArrayList<>();
+
+    public Mazo() {}
+
+    public Mazo(String nom, LocalDate dataCreacio) {
+        this.nom = nom;
+        this.dataCreacio = dataCreacio;
+    }
+
+    public Long getId() { return id; }
+
+    public String getNom() { return nom; }
+    public void setNom(String nom) { this.nom = nom; }
+
+    public LocalDate getDataCreacio() { return dataCreacio; }
+    public void setDataCreacio(LocalDate dataCreacio) { this.dataCreacio = dataCreacio; }
+
+    public List<Carta> getCartes() { return cartes; }
+    public void setCartes(List<Carta> cartes) { this.cartes = cartes; }
+
+    public void addCarta(Carta carta) {
+        this.cartes.add(carta);
+    }
+
+    public void removeCarta(Carta carta) {
+        this.cartes.remove(carta);
+    }
+}
+```

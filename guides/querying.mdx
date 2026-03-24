@@ -1,0 +1,194 @@
+---
+title: "Querying the card database"
+description: "All five JPQL query operations available in GestorCartas, including polymorphic queries, aggregate functions, and embedded-value navigation."
+---
+
+`GestorCartas` exposes five read operations that cover the full range of JPA query patterns: polymorphic entity queries, subclass filters, aggregate functions with multi-join navigation, embedded-value comparisons, and first-level cache identity tests.
+
+<Note>
+The `Carta` entity uses `@Inheritance(strategy = InheritanceType.JOINED)`. This means a JPQL query against `Carta` automatically spans all three subclass tables (`Criatura`, `Terra`, `Encanteri`) and returns a polymorphic result list. You never need to union the subclasses manually.
+</Note>
+
+## 1. List all cards
+
+**Method:** `testLlistarTotesLesCartes()`  
+**Returns:** `List<Carta>` — all cards regardless of subtype
+
+```java title="GestorCartas.java"
+// Llistar Totes les Cartes
+public List<Carta> testLlistarTotesLesCartes() {
+    // Obtenim totes les cartes
+    String jpql = "SELECT c FROM Carta c";
+    List<Carta> totes = em.createQuery(jpql, Carta.class).getResultList();
+    // Comprovem si la llista està buida
+    if (totes.isEmpty()) {
+        // Informem que no s'han trobat cartes
+        System.out.println("No s'ha trobat cap carta a la base de dades. L'import ha fallat?");
+    } 
+    // Si la llista no està buida, la mostrem
+    else {
+        for (Carta c : totes) {
+            System.out.println(c.toString());
+        }
+    }
+    return totes;
+}
+```
+
+**JPQL:**
+```sql
+SELECT c FROM Carta c
+```
+
+Because `Carta` is the root of a `JOINED` inheritance hierarchy, ObjectDB issues a query that joins the base `Carta` table with each subclass table and returns fully-typed instances — calling `toString()` on each result dispatches to the correct override in `Criatura`, `Terra`, or `Encanteri`.
+
+With the default seed data this query returns all **15 cards**: 5 creatures, 5 lands, 5 enchantments.
+
+## 2. Flying dark creatures
+
+**Method:** `buscarNomsCriaturesVoladoresFosques()`  
+**Returns:** `List<String>` — names only
+
+```java title="GestorCartas.java"
+// Consulta 1: Filtre de Subclasse
+public List<String> buscarNomsCriaturesVoladoresFosques() {
+    // Busquem noms de criatures voladores i de color negre
+    String jpql = "SELECT c.nom FROM Criatura c WHERE c.vola = true AND c.cost.negre > 2";
+    TypedQuery<String> query = em.createQuery(jpql, String.class);
+    return query.getResultList();
+}
+```
+
+**JPQL:**
+```sql
+SELECT c.nom FROM Criatura c WHERE c.vola = true AND c.cost.negre > 2
+```
+
+This query targets the `Criatura` subclass directly, filtering on two criteria:
+
+- `c.vola = true` — the creature has the flying keyword
+- `c.cost.negre > 2` — the black mana component of the embedded `CostMana` is greater than 2
+
+`c.cost.negre` is an *embedded path expression*: JPA navigates from `Criatura` into the `@Embedded` `CostMana` value object and compares the `negre` field.
+
+**Expected result with seed data:**
+
+Only one creature matches — `Espectre de la Nit` has `vola = true` and a black mana cost of 3:
+
+```
+- Espectre de la Nit
+```
+
+## 3. Average creature strength for a player
+
+**Method:** `calcularMitjanaForcaCriaturesJugador(String nickJugador)`  
+**Returns:** `Double` — average power, or `0.0` if the player has no creatures
+
+```java title="GestorCartas.java"
+// Consulta 2: Navegació "Deep Path" i Agregació
+public Double calcularMitjanaForcaCriaturesJugador(String nickJugador) {
+    // Comprovem si el jugador existeix
+    Long count = em.createQuery("SELECT COUNT(j) FROM Jugador j WHERE j.nick = :nick", Long.class)
+                   .setParameter("nick", nickJugador)
+                   .getSingleResult();
+    // Comprovem si el jugador existeix
+    if (count == 0) {
+        System.out.println("ERROR: No s'ha trobat cap jugador amb el nick '" + nickJugador + "'.");
+        return null; 
+    }
+    // Obtenim la mitjana de força
+    String jpql = "SELECT AVG(c.forca) FROM Criatura c, Jugador j JOIN j.mazos m " +
+                  "WHERE j.nick = :nick AND c MEMBER OF m.cartes";
+    // Creem la consulta
+    TypedQuery<Double> query = em.createQuery(jpql, Double.class);
+    query.setParameter("nick", nickJugador);
+    // Executem la consulta
+    Double mitjana = query.getSingleResult();
+    return mitjana != null ? mitjana : 0.0;
+}
+```
+
+**JPQL:**
+```sql
+SELECT AVG(c.forca)
+FROM Criatura c, Jugador j JOIN j.mazos m
+WHERE j.nick = :nick AND c MEMBER OF m.cartes
+```
+
+This query performs a three-way navigation:
+
+1. Starts from `Criatura c` and `Jugador j` as independent range variables.
+2. Joins `j.mazos m` to reach every deck owned by the player.
+3. Uses the `MEMBER OF` operator to restrict `c` to only creatures that appear in those decks.
+4. Applies the `AVG` aggregate over `c.forca` (power).
+
+The method first executes a `COUNT` guard query — if no player with that nick exists, it returns `null` early instead of letting `getSingleResult()` throw.
+
+**Expected result with seed data (example):**
+
+If a player named `"MagicFan"` owns a deck that was built from all 15 imported cards, the 5 creatures have powers `5, 2, 3, 4, 1`. The average is `3.0`.
+
+## 4. Colorless expensive enchantments
+
+**Method:** `buscarEncanterisIncolorsCars()`  
+**Returns:** `List<Encanteri>`
+
+```java title="GestorCartas.java"
+// Consulta 3: Cerca per Component Incrustat (@Embedded)
+public List<Encanteri> buscarEncanterisIncolorsCars() {
+    // Busquem encanteris incolors cars
+    String jpql = "SELECT e FROM Encanteri e WHERE e.cost.blau = 0 AND e.cost.blanc = 0 AND e.cost.incolor > 1";
+    TypedQuery<Encanteri> query = em.createQuery(jpql, Encanteri.class);
+    return query.getResultList();
+}
+```
+
+**JPQL:**
+```sql
+SELECT e FROM Encanteri e
+WHERE e.cost.blau = 0
+  AND e.cost.blanc = 0
+  AND e.cost.incolor > 1
+```
+
+This query finds enchantments that require no blue or white mana but do require more than 1 colorless mana. All three predicates navigate the `@Embedded` `CostMana` object via dot-notation path expressions.
+
+**Expected result with seed data:**
+
+`Bola de Foc` has cost `0,0,1,0,0,2` (Blau=0, Negre=0, Vermell=1, Verd=0, Blanc=0, Incolor=2), so `blau = 0`, `blanc = 0`, and `incolor = 2 > 1`. It is the only match:
+
+```
+╔══════════════════════════════════════╗
+║  Bola de Foc                         ║
+╠══════════════════════════════════════╣
+║  [ENCANTERI] Global                  ║
+║  Instantani : No                     ║
+╚══════════════════════════════════════╝
+```
+
+## 5. L1 cache identity test
+
+**Method:** `buscarPerId(long id)`  
+**Returns:** `Carta` — the found entity (or `null`)
+
+```java title="GestorCartas.java"
+// Tasca A (ID): Demostra la Garantia d'Identitat de la Caché L1
+public Carta buscarPerId(long id) {
+    // Busquem la carta per ID
+    Carta c1 = em.find(Carta.class, id);
+    Carta c2 = em.find(Carta.class, id);
+    // Comprovem la identitat
+    if (c1 != null && c1 == c2) {
+        System.out.println("Garantia d'Identitat confirmada: c1 i c2 són la mateixa instància en memòria.");
+    }
+    return c1;
+}
+```
+
+This method calls `em.find()` twice with the same primary key **within the same persistence context**. The JPA first-level cache (the *identity map*) guarantees that the second call returns the exact same Java object reference as the first — no second database round-trip is made.
+
+The `c1 == c2` reference equality check (not `.equals()`) proves this: both variables point to the identical in-memory instance.
+
+<Note>
+This guarantee only holds within a single `EntityManager` session (the L1 cache lifetime). Across different `EntityManager` instances, two `find()` calls for the same ID will produce different object references.
+</Note>

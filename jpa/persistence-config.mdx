@@ -1,0 +1,194 @@
+---
+title: "Persistence configuration"
+description: "How Magic ObjDB: The Poly Deck Engine configures ObjectDB as its JPA provider, including the persistence unit, database URL, and the JPAUtil singleton."
+---
+
+This page covers the full JPA persistence setup: the `persistence.xml` descriptor, the ObjectDB provider, the `RESOURCE_LOCAL` transaction type, and the `JPAUtil` helper class that bootstraps the `EntityManagerFactory`.
+
+## persistence.xml
+
+The persistence descriptor lives at `src/main/resources/META-INF/persistence.xml` and is the single source of truth for the JPA configuration.
+
+```xml persistence.xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<persistence xmlns="http://xmlns.jcp.org/xml/ns/persistence"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/persistence
+                                 http://xmlns.jcp.org/xml/ns/persistence/persistence_2_1.xsd"
+             version="2.1">
+
+    <persistence-unit name="PolyDeckPU" transaction-type="RESOURCE_LOCAL">
+        
+        <provider>com.objectdb.jpa.Provider</provider>
+
+        <class>com.polydeck.engine.model.Carta</class>
+        <class>com.polydeck.engine.model.Criatura</class>
+        <class>com.polydeck.engine.model.Terra</class>
+        <class>com.polydeck.engine.model.Encanteri</class>
+        <class>com.polydeck.engine.model.Mazo</class>
+        <class>com.polydeck.engine.model.Jugador</class>
+        <properties>
+            <property name="javax.persistence.jdbc.url" value="polydeck.odb"/>
+            
+            <property name="javax.persistence.jdbc.user" value="admin"/>
+            <property name="javax.persistence.jdbc.password" value="admin"/>
+            
+        </properties>
+        
+    </persistence-unit>
+</persistence>
+```
+
+<Warning>
+**Package mismatch bug.** The `<class>` entries reference `com.polydeck.engine.model.*`, but the actual source classes live under `com.mycompany.magic.objdb_the_poly_deck_engine.model.*`. ObjectDB will fail to register these entities at startup unless the `<class>` values are updated to match the real package names:
+
+```xml
+<!-- Correct package -->
+<class>com.mycompany.magic.objdb_the_poly_deck_engine.model.Carta</class>
+<class>com.mycompany.magic.objdb_the_poly_deck_engine.model.Criatura</class>
+<class>com.mycompany.magic.objdb_the_poly_deck_engine.model.Terra</class>
+<class>com.mycompany.magic.objdb_the_poly_deck_engine.model.Encanteri</class>
+<class>com.mycompany.magic.objdb_the_poly_deck_engine.model.Mazo</class>
+<class>com.mycompany.magic.objdb_the_poly_deck_engine.model.Jugador</class>
+```
+</Warning>
+
+## ObjectDB JPA provider
+
+The `<provider>` element tells JPA which persistence implementation to load:
+
+```xml
+<provider>com.objectdb.jpa.Provider</provider>
+```
+
+ObjectDB is an embedded, file-based object database with full JPA 2.1 support. Unlike relational databases, it stores Java objects directly without an ORM mapping layer. The `com.objectdb.jpa.Provider` class implements the standard `javax.persistence.spi.PersistenceProvider` SPI, so it integrates transparently with any JPA-compatible code.
+
+### ObjectDB Maven repository
+
+ObjectDB is not published to Maven Central. Add the ObjectDB repository and dependency to your `pom.xml`:
+
+```xml pom.xml
+<repositories>
+    <repository>
+        <id>objectdb</id>
+        <name>ObjectDB Repository</name>
+        <url>https://m2.objectdb.com</url>
+    </repository>
+</repositories>
+
+<dependencies>
+    <dependency>
+        <groupId>com.objectdb</groupId>
+        <artifactId>objectdb</artifactId>
+        <version>2.9.0</version>
+    </dependency>
+    <!-- JPA 2.1 API -->
+    <dependency>
+        <groupId>javax.persistence</groupId>
+        <artifactId>javax.persistence-api</artifactId>
+        <version>2.2</version>
+    </dependency>
+</dependencies>
+```
+
+## RESOURCE_LOCAL vs JTA
+
+The persistence unit declares `transaction-type="RESOURCE_LOCAL"`:
+
+| Transaction type | Description | Typical environment |
+|---|---|---|
+| `RESOURCE_LOCAL` | Transactions are managed manually by the application via `EntityTransaction` (`em.getTransaction().begin()` / `commit()`) | Standalone applications, desktop apps |
+| `JTA` | Transactions are managed by a Java EE / Jakarta EE container (e.g. WildFly, Payara) via `@Transactional` or `UserTransaction` | Application servers |
+
+Because Poly Deck Engine is a standalone Java application (no application server), `RESOURCE_LOCAL` is the correct choice. Every operation that modifies the database must be wrapped in an explicit transaction:
+
+```java
+em.getTransaction().begin();
+// ... persistence operations ...
+em.getTransaction().commit();
+```
+
+## Database URL
+
+```xml
+<property name="javax.persistence.jdbc.url" value="polydeck.odb"/>
+```
+
+The value `polydeck.odb` is a **relative file path**. ObjectDB interprets this as a local embedded database file stored in the current working directory of the JVM process. The file is created automatically on first run if it does not exist.
+
+- No network socket or separate server process is needed.
+- The `.odb` extension is the conventional ObjectDB file extension.
+- To use an absolute path, provide the full OS path, e.g. `/var/data/polydeck.odb`.
+
+## JPAUtil singleton
+
+`JPAUtil` provides a single shared `EntityManagerFactory` for the whole application and a factory method to create individual `EntityManager` instances.
+
+```java JPAUtil.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.utils;
+
+import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.Persistence;
+
+public class JPAUtil {
+
+    // Equivalent al SessionFactory de Hibernate
+    private static final EntityManagerFactory emf;
+
+    // Bloc estàtic per a inicialitzar la factoria una sola vegada en arrancar l'app
+    static {
+        try {
+            // "PolyDeckPU" ha de coincidir EXACTAMENT amb el <persistence-unit name="..."> del persistence.xml
+            emf = Persistence.createEntityManagerFactory("PolyDeckPU");
+        } catch (Throwable ex) {
+            System.err.println("Error catastròfic iniciant l'EntityManagerFactory: " + ex);
+            throw new ExceptionInInitializerError(ex);
+        }
+    }
+
+    // Retorna un EntityManager perquè el GestorCartes treballi.
+    public static EntityManager getEntityManager() {
+        return emf.createEntityManager();
+    }
+
+    // Tanca la factoria global en apagar l'aplicació.
+    public static void shutdown() {
+        if (emf != null && emf.isOpen()) {
+            emf.close();
+        }
+    }
+}
+```
+
+### Why a static initializer?
+
+Creating an `EntityManagerFactory` is expensive — it reads `persistence.xml`, connects to the database, and initialises entity metadata. Using a `static` block guarantees this happens exactly once per JVM lifetime.
+
+If initialisation fails (e.g. due to the package mismatch described above), an `ExceptionInInitializerError` is thrown, which prevents the application from starting with a broken persistence layer.
+
+### EntityManager lifecycle
+
+Unlike the `EntityManagerFactory`, `EntityManager` instances are **lightweight and short-lived**. Each logical unit of work (e.g. a single request or operation) should use its own `EntityManager`:
+
+```java
+EntityManager em = JPAUtil.getEntityManager();
+try {
+    em.getTransaction().begin();
+    // ... work ...
+    em.getTransaction().commit();
+} finally {
+    em.close();
+}
+```
+
+Call `JPAUtil.shutdown()` once when the application exits to release the database file lock.
+
+<CardGroup cols={2}>
+  <Card title="Entity lifecycle" href="/jpa/entity-lifecycle">
+    Understand the four JPA entity states and how entities transition between them.
+  </Card>
+  <Card title="Dirty checking" href="/jpa/dirty-checking">
+    How JPA automatically detects and flushes changes to managed entities.
+  </Card>
+</CardGroup>

@@ -1,0 +1,118 @@
+---
+title: "Terra (land card)"
+description: "JPA entity for land cards. Produces colored mana and has no mana cost to play."
+---
+
+`Terra` is a concrete `@Entity` that extends `Carta`. It represents a land card — the primary mana source in Magic: The Gathering. Land cards are played for free and produce one type of colored mana.
+
+<Note>
+  Lands do **not** require mana to play. While the `CostMana cost` field is inherited from `Carta` (and persisted in the `Carta` table), it should be initialized to all-zeros: `new CostMana(0, 0, 0, 0, 0, 0)`. The data in `cartes.txt` omits the mana cost column for lands entirely.
+</Note>
+
+## Inherited fields (from Carta)
+
+<ResponseField name="id" type="Long">
+  Auto-generated primary key inherited from `Carta`.
+</ResponseField>
+
+<ResponseField name="nom" type="String">
+  Card name.
+</ResponseField>
+
+<ResponseField name="descripcio" type="String">
+  Rules or flavour text. Up to 1000 characters.
+</ResponseField>
+
+<ResponseField name="raresa" type="Raresa">
+  Rarity: `COMUNA`, `INFREQÜENT`, `RARA`, or `MITICA`.
+</ResponseField>
+
+<ResponseField name="edicio" type="String">
+  Card set/edition.
+</ResponseField>
+
+<ResponseField name="cost" type="CostMana">
+  Inherited but unused for lands. All values should be `0`.
+</ResponseField>
+
+## Own fields
+
+<ResponseField name="produccio" type="Color">
+  The color of mana this land produces when tapped. Stored as `@Enumerated(EnumType.STRING)`. Possible values: `BLANC`, `BLAU`, `NEGRE`, `VERMELL`, `VERD`, `INCOLOR`. See [Enums](/data-model/enums).
+</ResponseField>
+
+<ResponseField name="esBasica" type="boolean">
+  Whether this is a basic land. Basic lands (Plains, Island, Swamp, Mountain, Forest) have no deck-building limit. Non-basic lands are limited to four copies per deck.
+</ResponseField>
+
+## Source code
+
+```java Terra.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.model;
+
+import javax.persistence.Entity;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
+
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.enums.Color;
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.enums.Raresa;
+
+@Entity
+public class Terra extends Carta {
+
+    @Enumerated(EnumType.STRING)
+    private Color produccio;
+
+    private boolean esBasica;
+
+    public Terra() {
+        super();
+    }
+
+    public Terra(String nom, String descripcio, Raresa raresa, String edicio, CostMana cost,
+                 Color produccio, boolean esBasica) {
+        super(nom, descripcio, raresa, edicio, cost);
+        this.produccio = produccio;
+        this.esBasica = esBasica;
+    }
+
+    public Color getProduccio() { return produccio; }
+    public void setProduccio(Color produccio) { this.produccio = produccio; }
+
+    public boolean isEsBasica() { return esBasica; }
+    public void setEsBasica(boolean esBasica) { this.esBasica = esBasica; }
+}
+```
+
+## Example: Muntanya Volcànica
+
+From `cartes.txt`, a basic Mountain land:
+
+```
+TERRA|Muntanya Volcànica|Una muntanya que fumeja constantment.|COMUNA|VERMELL|true
+```
+
+| Field | Value |
+|-------|-------|
+| `nom` | Muntanya Volcànica |
+| `descripcio` | Una muntanya que fumeja constantment. |
+| `raresa` | `COMUNA` |
+| `cost` | _(zero — lands are free to play)_ |
+| `produccio` | `VERMELL` (Red `{R}`) |
+| `esBasica` | `true` |
+
+```java
+Terra muntanya = new Terra(
+    "Muntanya Volcànica",
+    "Una muntanya que fumeja constantment.",
+    Raresa.COMUNA,
+    "Alpha",
+    new CostMana(0, 0, 0, 0, 0, 0), // zero cost
+    Color.VERMELL,
+    true
+);
+```
+
+<Tip>
+  All five basic land types (Forest, Island, Mountain, Plains, Swamp) are seeded from `cartes.txt` with `esBasica = true`. Non-basic lands would set this to `false`.
+</Tip>

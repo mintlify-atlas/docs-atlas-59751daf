@@ -1,0 +1,135 @@
+---
+title: "Jugador (player)"
+description: "JPA entity representing a game player with a level, owned decks, and a card collection."
+---
+
+`Jugador` is a standalone `@Entity` representing a player in the system. A player has a username (`nick`), a level (`nivell`), a list of owned decks (`mazos`), and a personal card collection (`colleccio`).
+
+## Fields
+
+<ResponseField name="id" type="Long">
+  Auto-generated primary key (`@Id @GeneratedValue`). Read-only after persist.
+</ResponseField>
+
+<ResponseField name="nick" type="String">
+  The player's username or display name.
+</ResponseField>
+
+<ResponseField name="nivell" type="int">
+  The player's current level. An integer with no upper bound enforced at the model layer.
+</ResponseField>
+
+<ResponseField name="mazos" type="List<Mazo>">
+  The decks owned by this player. Mapped with `@OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)`.
+
+  - **`CascadeType.ALL`** — all JPA operations (persist, merge, remove, refresh, detach) are cascaded from `Jugador` to its `Mazo` instances. Persisting a player automatically persists their decks.
+  - **`orphanRemoval = true`** — if a `Mazo` is removed from the `mazos` list (without an explicit `em.remove()`), JPA automatically deletes the orphaned `Mazo` row from the database.
+</ResponseField>
+
+<ResponseField name="colleccio" type="List<Carta>">
+  All cards owned by this player. Mapped with `@ManyToMany` (no cascade options set).
+
+  - A card can appear in multiple players' collections without being duplicated in the `Carta` table.
+  - No cascade is configured, so persisting a `Jugador` will **not** automatically persist new `Carta` objects added to `colleccio`. Cards must be persisted independently (or via a `Mazo` with `CascadeType.PERSIST`).
+</ResponseField>
+
+## Relationship summary
+
+```
+Jugador ──────────── Mazo
+  (1)  @OneToMany  (*)
+       cascade=ALL
+       orphanRemoval=true
+
+Jugador ──────────── Carta
+  (*)  @ManyToMany  (*)
+       (no cascade)
+```
+
+<Warning>
+  Because `mazos` uses `orphanRemoval = true`, calling `jugador.getMazos().clear()` will delete **all of that player's decks** from the database on the next flush. Use this with care.
+</Warning>
+
+## Helper methods
+
+<ResponseField name="addMazo(Mazo mazo)" type="void">
+  Appends a deck to the player's `mazos` list.
+
+  ```java
+  Jugador jugador = new Jugador("Gandalf", 10);
+  Mazo deck = new Mazo("Foc i Llum", LocalDate.now());
+  jugador.addMazo(deck); // deck is now owned by jugador
+  em.persist(jugador);   // cascades ALL -> also persists deck
+  ```
+</ResponseField>
+
+<ResponseField name="addCartaAColleccio(Carta carta)" type="void">
+  Appends a card to the player's `colleccio` list.
+
+  ```java
+  jugador.addCartaAColleccio(drac);
+  // Note: drac must already be persisted or the transaction must
+  // flush it through another cascade path (e.g. via a Mazo).
+  ```
+</ResponseField>
+
+## Source code
+
+```java Jugador.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.model;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.persistence.CascadeType;
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.Id;
+import javax.persistence.ManyToMany;
+import javax.persistence.OneToMany;
+
+@Entity
+public class Jugador {
+
+    @Id
+    @GeneratedValue
+    private Long id;
+    private String nick;
+    private int nivell;
+
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Mazo> mazos = new ArrayList<>();
+
+    @ManyToMany
+    private List<Carta> colleccio = new ArrayList<>();
+
+    public Jugador() {}
+
+    public Jugador(String nick, int nivell) {
+        this.nick = nick;
+        this.nivell = nivell;
+    }
+
+    public Long getId() { return id; }
+
+    public String getNick() { return nick; }
+    public void setNick(String nick) { this.nick = nick; }
+
+    public int getNivell() { return nivell; }
+    public void setNivell(int nivell) { this.nivell = nivell; }
+
+    public List<Mazo> getMazos() { return mazos; }
+    public void setMazos(List<Mazo> mazos) { this.mazos = mazos; }
+
+    public List<Carta> getColleccio() { return colleccio; }
+    public void setColleccio(List<Carta> colleccio) { this.colleccio = colleccio; }
+
+    public void addMazo(Mazo mazo) {
+        this.mazos.add(mazo);
+    }
+
+    public void addCartaAColleccio(Carta carta) {
+        this.colleccio.add(carta);
+    }
+}
+```

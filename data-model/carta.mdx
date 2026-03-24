@@ -1,0 +1,139 @@
+---
+title: "Carta (base card)"
+description: "Abstract JPA base entity for all card types in the Magic ObjDB deck engine. Uses JOINED inheritance."
+---
+
+`Carta` is the **abstract base entity** from which all card types inherit. It is annotated with `@Entity` and `@Inheritance(strategy = InheritanceType.JOINED)`, making it the root of the JOINED inheritance hierarchy.
+
+<Warning>
+  `Carta` is declared `abstract` in Java. It **cannot be instantiated directly**. You must always create a concrete subtype: `Criatura`, `Terra`, or `Encanteri`.
+</Warning>
+
+## JPA annotations
+
+| Annotation | Purpose |
+|------------|---------|
+| `@Entity` | Registers `Carta` as a JPA-managed entity with its own table. |
+| `@Inheritance(strategy = InheritanceType.JOINED)` | All subclasses join back to this table via a shared primary key. |
+| `@Id` + `@GeneratedValue` | Auto-generated `Long` primary key shared across all subtypes. |
+| `@Column(length = 1000)` | Increases the column size for `descripcio` to 1000 characters. |
+| `@Enumerated(EnumType.STRING)` | Stores `Raresa` as its string name rather than an ordinal. |
+| `@Embedded` | Inlines all `CostMana` fields directly into the `Carta` table. |
+
+## Fields
+
+<ResponseField name="id" type="Long">
+  Auto-generated primary key (`@Id @GeneratedValue`). Shared with all subtype tables as the join column. Read-only after persist.
+</ResponseField>
+
+<ResponseField name="nom" type="String">
+  The card name (e.g. `"Drac de Foc"`). No length constraint beyond the default column size.
+</ResponseField>
+
+<ResponseField name="descripcio" type="String">
+  Flavour or rules text for the card. Annotated `@Column(length = 1000)` to accommodate longer descriptions.
+</ResponseField>
+
+<ResponseField name="raresa" type="Raresa">
+  Rarity of the card. Stored as a string via `@Enumerated(EnumType.STRING)`. Possible values: `COMUNA`, `INFREQÜENT`, `RARA`, `MITICA`. See [Enums](/data-model/enums).
+</ResponseField>
+
+<ResponseField name="edicio" type="String">
+  The card set/edition this card belongs to (e.g. `"Alpha"`, `"Core 2024"`).
+</ResponseField>
+
+<ResponseField name="cost" type="CostMana">
+  The mana cost to cast the card, embedded directly into the `Carta` table. Getter is `getCoste()` / setter `setCoste()`.
+
+  <Expandable title="CostMana fields">
+    <ResponseField name="blanc" type="int">
+      White mana cost `{W}`.
+    </ResponseField>
+    <ResponseField name="blau" type="int">
+      Blue mana cost `{U}`.
+    </ResponseField>
+    <ResponseField name="negre" type="int">
+      Black mana cost `{B}`.
+    </ResponseField>
+    <ResponseField name="vermell" type="int">
+      Red mana cost `{R}`.
+    </ResponseField>
+    <ResponseField name="verd" type="int">
+      Green mana cost `{G}`.
+    </ResponseField>
+    <ResponseField name="incolor" type="int">
+      Colorless mana cost `{C}`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Source code
+
+```java Carta.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.model;
+
+import javax.persistence.Column;
+import javax.persistence.Embedded;
+import javax.persistence.Entity;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
+import javax.persistence.GeneratedValue;
+import javax.persistence.Id;
+import javax.persistence.Inheritance;
+import javax.persistence.InheritanceType;
+
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.enums.Raresa;
+
+@Entity
+@Inheritance(strategy = InheritanceType.JOINED)
+public abstract class Carta {
+
+    @Id
+    @GeneratedValue
+    private Long id;
+
+    private String nom;
+
+    @Column(length = 1000)
+    private String descripcio;
+
+    @Enumerated(EnumType.STRING)
+    private Raresa raresa;
+
+    private String edicio;
+
+    @Embedded
+    private CostMana cost;
+
+    public Carta() {}
+
+    public Carta(String nom, String descripcio, Raresa raresa, String edicio, CostMana coste) {
+        this.nom = nom;
+        this.descripcio = descripcio;
+        this.raresa = raresa;
+        this.edicio = edicio;
+        this.cost = coste;
+    }
+
+    public Long getId() { return id; }
+
+    public String getNom() { return nom; }
+    public void setNom(String nom) { this.nom = nom; }
+
+    public String getDescripcio() { return descripcio; }
+    public void setDescripcio(String descripcio) { this.descripcio = descripcio; }
+
+    public Raresa getRaresa() { return raresa; }
+    public void setRaresa(Raresa raresa) { this.raresa = raresa; }
+
+    public String getEdicio() { return edicio; }
+    public void setEdicio(String edicio) { this.edicio = edicio; }
+
+    public CostMana getCoste() { return cost; }
+    public void setCoste(CostMana coste) { this.cost = coste; }
+}
+```
+
+<Tip>
+  The `toString()` implementation in `Carta` renders a box-drawing ASCII card frame. Each subclass extends it by appending type-specific rows before the closing border.
+</Tip>

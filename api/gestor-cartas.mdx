@@ -1,0 +1,436 @@
+---
+title: "GestorCartas"
+description: "The main service layer for all JPA persistence operations in Magic ObjDB: The Poly Deck Engine."
+---
+
+## Overview
+
+**Package:** `com.mycompany.magic.objdb_the_poly_deck_engine.manager`
+
+`GestorCartas` is the central service class that encapsulates all persistence logic for the application. It wraps an `EntityManager` and exposes methods covering the full CRUD lifecycle — from importing cards from file to orphan removal of player decks.
+
+Each instance is tied to a single `EntityManager` provided at construction time.
+
+## Constructor
+
+```java GestorCartas.java
+public GestorCartas(EntityManager em)
+```
+
+Creates a new `GestorCartas` bound to the given `EntityManager`. All operations on this instance use the same `em`.
+
+<ParamField path="em" type="EntityManager" required>
+  An open `EntityManager` obtained from `JPAUtil.getEntityManager()`. The caller is responsible for closing it when done.
+</ParamField>
+
+```java Example
+EntityManager em = JPAUtil.getEntityManager();
+GestorCartas gestor = new GestorCartas(em);
+// ... use gestor ...
+em.close();
+```
+
+---
+
+## Utilities / Lifecycle
+
+### `netejarBaseDades()`
+
+```java
+public void netejarBaseDades()
+```
+
+Deletes **all** rows from `Jugador`, `Mazo`, and `Carta` tables in that order, respecting foreign-key dependency constraints. Intended to be called immediately before a fresh import.
+
+**Transaction behavior:** Opens a transaction internally, executes three bulk-delete JPQL statements, then commits. Rolls back automatically on any exception.
+
+**Side effects:**
+- Prints a warning message to stdout before deletion.
+- Prints a confirmation or an error message to stderr.
+- After this call the database is empty.
+
+<Warning>
+  This operation is irreversible. Every `Jugador`, `Mazo`, and `Carta` record is permanently deleted.
+</Warning>
+
+```java Example
+gestor.netejarBaseDades();
+gestor.importarCartes("src/main/resources/data/cartes.txt");
+```
+
+---
+
+### `obtenirTotsElsJugadors()`
+
+```java
+public List<Jugador> obtenirTotsElsJugadors()
+```
+
+Returns all `Jugador` entities currently persisted in the database. No transaction is opened; the read is executed directly against the persistence context.
+
+**JPQL:** `SELECT j FROM Jugador j`
+
+<ResponseField name="return" type="List&lt;Jugador&gt;">
+  All player records. Returns an empty list when no players exist.
+</ResponseField>
+
+```java Example
+List<Jugador> jugadors = gestor.obtenirTotsElsJugadors();
+for (Jugador j : jugadors) {
+    System.out.println(j.getNick() + " — level " + j.getNivell());
+}
+```
+
+---
+
+## CREATE
+
+### `importarCartes(String rutaArxiu)`
+
+```java
+public void importarCartes(String rutaArxiu)
+```
+
+Reads card data from a pipe-delimited text file using `LectorFicheros.llegirCartes()`, then persists every parsed card inside a single transaction.
+
+<ParamField path="rutaArxiu" type="String" required>
+  Path to the pipe-delimited card data file (e.g. `"src/main/resources/data/cartes.txt"`).
+</ParamField>
+
+**Transaction behavior:** Opens one transaction that covers all `em.persist()` calls. If any card fails to persist, the transaction is rolled back and no cards are saved.
+
+**Side effects:**
+- Returns early with a message if `LectorFicheros` returns an empty list.
+- Prints progress and result messages to stdout.
+- Prints error details to stderr on failure.
+
+<Note>
+  Call `netejarBaseDades()` before `importarCartes()` if you want a clean re-import without duplicate records.
+</Note>
+
+```java Example
+gestor.netejarBaseDades();
+gestor.importarCartes("src/main/resources/data/cartes.txt");
+```
+
+---
+
+### `crearJugadorAmbMazo(String nick, int nivell, String nomMazo, List<Carta> cartesMazo)`
+
+```java
+public void crearJugadorAmbMazo(String nick, int nivell, String nomMazo, List<Carta> cartesMazo)
+```
+
+Creates a new `Jugador` (or reuses an existing one with the same `nick`), builds a `Mazo` from the provided card list, attaches the deck to the player, and persists everything in one transaction.
+
+<ParamField path="nick" type="String" required>
+  The player's unique nickname. If a player with this nick already exists they are reused; otherwise a new `Jugador` is created.
+</ParamField>
+
+<ParamField path="nivell" type="int" required>
+  The level assigned to a **newly created** player. Ignored when an existing player is found.
+</ParamField>
+
+<ParamField path="nomMazo" type="String" required>
+  Display name for the new deck.
+</ParamField>
+
+<ParamField path="cartesMazo" type="List&lt;Carta&gt;" required>
+  The list of `Carta` instances to add to the new deck. These must already be managed (persisted) entities.
+</ParamField>
+
+**Transaction behavior:** All operations run inside a single transaction. Rolls back on exception.
+
+**Side effects:** Prints whether a new or existing player was used, and confirms deck assignment.
+
+```java Example
+List<Carta> totes = gestor.obtenirTotesLesCartes();
+gestor.crearJugadorAmbMazo("Elara", 10, "Dragon Rush", totes);
+```
+
+---
+
+## READ
+
+### `testLlistarTotesLesCartes()`
+
+```java
+public List<Carta> testLlistarTotesLesCartes()
+```
+
+Fetches every `Carta` entity and **prints each one** to stdout using `Carta.toString()`. Useful for interactive debugging and menu-driven inspection.
+
+**JPQL:** `SELECT c FROM Carta c`
+
+<ResponseField name="return" type="List&lt;Carta&gt;">
+  All card entities. Returns an empty list and prints a diagnostic warning when the database contains no cards.
+</ResponseField>
+
+<Note>
+  Prefer `obtenirTotesLesCartes()` in production code paths where printing is undesirable.
+</Note>
+
+```java Example
+List<Carta> cartes = gestor.testLlistarTotesLesCartes();
+System.out.println("Total: " + cartes.size());
+```
+
+---
+
+### `obtenirTotesLesCartes()`
+
+```java
+public List<Carta> obtenirTotesLesCartes()
+```
+
+Fetches every `Carta` entity **without printing** them. Use this variant when you only need the data.
+
+**JPQL:** `SELECT c FROM Carta c`
+
+<ResponseField name="return" type="List&lt;Carta&gt;">
+  All card entities. Returns an empty list when no cards exist (also prints a diagnostic message).
+</ResponseField>
+
+```java Example
+List<Carta> totes = gestor.obtenirTotesLesCartes();
+if (totes.size() >= 3) {
+    gestor.crearJugadorAmbMazo("Elara", 10, "Starter", totes.subList(0, 3));
+}
+```
+
+---
+
+### `buscarPerId(long id)`
+
+```java
+public Carta buscarPerId(long id)
+```
+
+Finds a `Carta` by its primary key using `EntityManager.find()`. Calls `find()` **twice** with the same ID to demonstrate the L1 (first-level) persistence-context identity guarantee — both calls return the exact same Java object reference.
+
+<ParamField path="id" type="long" required>
+  The primary key of the card to retrieve.
+</ParamField>
+
+<ResponseField name="return" type="Carta">
+  The managed `Carta` entity, or `null` if no card exists with the given ID.
+</ResponseField>
+
+**Side effects:** Prints a confirmation message to stdout when the identity guarantee holds (`c1 == c2`).
+
+<Note>
+  Within the same persistence context, `em.find()` on the same ID always returns the same cached instance without hitting the database a second time. This is the JPA L1 cache identity guarantee.
+</Note>
+
+```java Example
+Carta carta = gestor.buscarPerId(1L);
+if (carta != null) {
+    System.out.println(carta.getNom());
+}
+```
+
+---
+
+### `buscarNomsCriaturesVoladoresFosques()`
+
+```java
+public List<String> buscarNomsCriaturesVoladoresFosques()
+```
+
+Returns the **names** of all `Criatura` entities that have flying (`vola = true`) and a black mana cost greater than 2 (`cost.negre > 2`).
+
+**JPQL:**
+```java
+"SELECT c.nom FROM Criatura c WHERE c.vola = true AND c.cost.negre > 2"
+```
+
+<ResponseField name="return" type="List&lt;String&gt;">
+  Card names matching the filter. Returns an empty list if none qualify.
+</ResponseField>
+
+```java Example
+List<String> noms = gestor.buscarNomsCriaturesVoladoresFosques();
+noms.forEach(nom -> System.out.println("- " + nom));
+```
+
+---
+
+### `calcularMitjanaForcaCriaturesJugador(String nickJugador)`
+
+```java
+public Double calcularMitjanaForcaCriaturesJugador(String nickJugador)
+```
+
+Calculates the average `forca` (power) of all `Criatura` cards across all decks owned by a given player. First verifies the player exists; returns `null` when the player is not found.
+
+<ParamField path="nickJugador" type="String" required>
+  The exact nickname of the player whose creature average is calculated.
+</ParamField>
+
+<ResponseField name="return" type="Double">
+  The average power as a `Double`. Returns `0.0` when the player exists but has no creatures in any deck. Returns `null` if no player with the given nick exists.
+</ResponseField>
+
+**JPQL (existence check):**
+```java
+"SELECT COUNT(j) FROM Jugador j WHERE j.nick = :nick"
+```
+
+**JPQL (aggregation with deep path navigation):**
+```java
+"SELECT AVG(c.forca) FROM Criatura c, Jugador j JOIN j.mazos m " +
+"WHERE j.nick = :nick AND c MEMBER OF m.cartes"
+```
+
+```java Example
+Double avg = gestor.calcularMitjanaForcaCriaturesJugador("Elara");
+if (avg != null) {
+    System.out.println("Average creature power: " + avg);
+}
+```
+
+---
+
+### `buscarEncanterisIncolorsCars()`
+
+```java
+public List<Encanteri> buscarEncanterisIncolorsCars()
+```
+
+Returns all `Encanteri` entities whose mana cost is entirely colorless (no blue or white mana) **and** has more than 1 colorless mana symbol. Demonstrates querying on `@Embedded` value objects.
+
+**JPQL:**
+```java
+"SELECT e FROM Encanteri e WHERE e.cost.blau = 0 AND e.cost.blanc = 0 AND e.cost.incolor > 1"
+```
+
+<ResponseField name="return" type="List&lt;Encanteri&gt;">
+  All matching `Encanteri` entities. Returns an empty list when none qualify.
+</ResponseField>
+
+```java Example
+List<Encanteri> encanteris = gestor.buscarEncanterisIncolorsCars();
+encanteris.forEach(e -> System.out.println(e.toString()));
+```
+
+---
+
+## UPDATE
+
+### `actualitzarDescripcioManaged(long idCarta, String novaDescripcio)`
+
+```java
+public void actualitzarDescripcioManaged(long idCarta, String novaDescripcio)
+```
+
+Updates a card's description using **JPA dirty checking**. The card is loaded into the persistence context with `em.find()`, the field is modified directly on the managed entity, and the change is automatically detected and flushed when the transaction commits — no explicit `em.merge()` or `em.persist()` call is needed.
+
+<ParamField path="idCarta" type="long" required>
+  Primary key of the card to update.
+</ParamField>
+
+<ParamField path="novaDescripcio" type="String" required>
+  The new description text to set on the card.
+</ParamField>
+
+**Transaction behavior:** Opens a transaction, loads the entity, modifies it, and commits. Rolls back if the card is not found or an exception occurs.
+
+**Side effects:** Prints a confirmation or a not-found message to stdout.
+
+<Note>
+  Dirty checking only works while the entity is in the **managed** state inside an active persistence context. The change is written at commit time without any explicit update call.
+</Note>
+
+```java Example
+gestor.actualitzarDescripcioManaged(3L, "A fearsome dragon of the north.");
+```
+
+---
+
+### `actualitzarNomDetached(long idCarta, String nouNom)`
+
+```java
+public void actualitzarNomDetached(long idCarta, String nouNom)
+```
+
+Updates a card's name using the **detach-and-merge** pattern. The card is loaded with the current `EntityManager`, which is then **closed** (detaching the entity). The name is changed on the now-detached instance. A brand-new `EntityManager` (from `JPAUtil.getEntityManager()`) is opened, and `em.merge()` reattaches and saves the change.
+
+<ParamField path="idCarta" type="long" required>
+  Primary key of the card to update.
+</ParamField>
+
+<ParamField path="nouNom" type="String" required>
+  The new name to assign to the card.
+</ParamField>
+
+**Transaction behavior:** Uses a second, internally created `EntityManager`. The new EM is committed and closed before the method returns.
+
+**Side effects:**
+- Closes `this.em` as part of the operation — the `GestorCartas` instance becomes unusable after this call.
+- Prints a confirmation or not-found message to stdout.
+
+<Warning>
+  After calling `actualitzarNomDetached()`, the original `EntityManager` injected at construction is closed. The caller must obtain a fresh `EntityManager` and create a new `GestorCartas` instance before making further persistence calls.
+</Warning>
+
+```java Example
+gestor.actualitzarNomDetached(5L, "Shadow Specter");
+// The original em is now closed — re-initialize:
+em = JPAUtil.getEntityManager();
+gestor = new GestorCartas(em);
+```
+
+---
+
+## DELETE
+
+### `eliminarCartaPerId(long idCarta)`
+
+```java
+public void eliminarCartaPerId(long idCarta)
+```
+
+Removes a `Carta` entity from the database by its primary key. Loads the entity first to confirm it exists, then calls `em.remove()` inside a transaction.
+
+<ParamField path="idCarta" type="long" required>
+  Primary key of the card to delete.
+</ParamField>
+
+**Transaction behavior:** Opens a transaction, loads the entity, removes it, and commits. Rolls back if the card does not exist or an error occurs.
+
+**Side effects:** Prints a confirmation or not-found message to stdout.
+
+```java Example
+gestor.eliminarCartaPerId(7L);
+```
+
+---
+
+### `eliminarMazoOrphanRemoval(long idJugador, int indexMazoAEsborrar)`
+
+```java
+public void eliminarMazoOrphanRemoval(long idJugador, int indexMazoAEsborrar)
+```
+
+Removes a deck from a player's deck list by list index. Because `Jugador.mazos` is mapped with `orphanRemoval = true`, removing the `Mazo` from the collection is enough — JPA automatically issues the `DELETE` for the orphaned `Mazo` row at commit time.
+
+<ParamField path="idJugador" type="long" required>
+  Primary key of the `Jugador` who owns the deck.
+</ParamField>
+
+<ParamField path="indexMazoAEsborrar" type="int" required>
+  Zero-based index of the deck to remove from the player's `mazos` list (e.g. `0` for the first deck).
+</ParamField>
+
+**Transaction behavior:** Opens a transaction, loads the player, removes the deck from the list, and commits. Rolls back if the player is not found, the index is out of bounds, or an exception occurs.
+
+**Side effects:** Prints confirmation, or error messages for invalid player ID or index.
+
+<Note>
+  `orphanRemoval = true` on the `@OneToMany` relationship means you never need to call `em.remove()` on the `Mazo` directly — removing it from the parent collection is sufficient.
+</Note>
+
+```java Example
+// Remove the first deck (index 0) from the player with ID 2
+gestor.eliminarMazoOrphanRemoval(2L, 0);
+```

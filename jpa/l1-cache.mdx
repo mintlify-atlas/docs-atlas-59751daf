@@ -1,0 +1,80 @@
+---
+title: "First-level (L1) cache"
+description: "How the EntityManager identity map guarantees that looking up the same entity ID twice within the same EM always returns the identical Java instance."
+---
+
+The JPA first-level (L1) cache is the **identity map** maintained by each `EntityManager`. It is always active and cannot be disabled. Its core guarantee: within the same `EntityManager` session, looking up the same entity by its primary key always returns the **same Java object instance**.
+
+<Note>
+This is the **L1 (first-level) cache**, scoped to a single `EntityManager` session. It is completely separate from the optional L2 (second-level) cache, which is shared across `EntityManager` instances and must be explicitly configured. Poly Deck Engine only uses the L1 cache.
+</Note>
+
+## The identity guarantee in action
+
+The `buscarPerId()` method in `GestorCartas` directly demonstrates this guarantee by calling `em.find()` twice with the same ID and then comparing the two references with `==`:
+
+```java GestorCartas.java
+// Tasca A (ID): Demostra la Garantia d'Identitat de la Caché L1
+public Carta buscarPerId(long id) {
+    // First lookup — hits the database, stores result in L1 cache
+    Carta c1 = em.find(Carta.class, id);
+
+    // Second lookup — same EM, same ID → served from L1 cache, no DB query
+    Carta c2 = em.find(Carta.class, id);
+
+    // == compares object references, not field values
+    if (c1 != null && c1 == c2) {
+        System.out.println(
+            "Garantia d'Identitat confirmada: c1 i c2 són la mateixa instància en memòria."
+        );
+    }
+    return c1;
+}
+```
+
+The `==` check passes because `c1` and `c2` point to the **exact same object in memory**. The second `em.find()` never issues a SQL/JDOQL query to the database; it simply returns the cached reference.
+
+## Why the same instance is returned
+
+When `em.find(Carta.class, id)` is called:
+
+1. The `EntityManager` checks its internal identity map: `Map<Class<?>, Map<Object, Object>>`.
+2. If an entry for `(Carta.class, id)` already exists, that cached instance is returned immediately.
+3. If no entry exists, ObjectDB fetches the row, constructs a new `Carta` instance, registers it in the map, and returns it.
+
+Subsequent calls with the same `(type, id)` pair always hit step 2 — no database round-trip occurs.
+
+## What happens with two different EntityManagers
+
+The L1 cache is **per-EntityManager**. If you open a second `EntityManager` and look up the same ID, you get a **different Java instance**, even though both represent the same database row:
+
+```java
+EntityManager em1 = JPAUtil.getEntityManager();
+EntityManager em2 = JPAUtil.getEntityManager();
+
+Carta a = em1.find(Carta.class, 1L);
+Carta b = em2.find(Carta.class, 1L);
+
+// a == b  →  false  (different EM sessions, different L1 caches)
+// a.equals(b)  →  depends on your equals() implementation
+```
+
+Each `EntityManager` has its own isolated snapshot of the world. Changes made through `em1` are not visible through `em2` until they are committed and `em2` reloads the entity.
+
+## Practical implications
+
+| Scenario | Result |
+|---|---|
+| `em.find()` called twice, same EM, same ID | Same Java instance (L1 hit) |
+| `em.find()` called after `em.clear()` | New instance fetched from DB (L1 cleared) |
+| Two different `EntityManager` instances | Different Java instances |
+| Entity modified via one EM, read via another EM | Second EM sees stale data until committed + reloaded |
+
+<CardGroup cols={2}>
+  <Card title="Dirty checking" href="/jpa/dirty-checking">
+    Because managed entities are cached in the L1 map, JPA can compare their current state to their original snapshot to detect changes automatically.
+  </Card>
+  <Card title="Detached entities and merge" href="/jpa/detached-merge">
+    When an EM is closed its L1 cache is discarded, and all entities it held become detached.
+  </Card>
+</CardGroup>

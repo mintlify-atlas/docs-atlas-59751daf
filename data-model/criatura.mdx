@@ -1,0 +1,134 @@
+---
+title: "Criatura (creature card)"
+description: "JPA entity for creature cards. Extends Carta with power, toughness, creature type, and flying."
+---
+
+`Criatura` is a concrete `@Entity` that extends `Carta`. It represents a creature card with combat statistics and an optional flying ability. Its own columns are stored in a separate `Criatura` table joined to `Carta` via the shared primary key.
+
+## Inherited fields (from Carta)
+
+<ResponseField name="id" type="Long">
+  Auto-generated primary key inherited from `Carta`.
+</ResponseField>
+
+<ResponseField name="nom" type="String">
+  Card name.
+</ResponseField>
+
+<ResponseField name="descripcio" type="String">
+  Rules or flavour text. Up to 1000 characters.
+</ResponseField>
+
+<ResponseField name="raresa" type="Raresa">
+  Rarity: `COMUNA`, `INFREQÜENT`, `RARA`, or `MITICA`.
+</ResponseField>
+
+<ResponseField name="edicio" type="String">
+  Card set/edition.
+</ResponseField>
+
+<ResponseField name="cost" type="CostMana">
+  Mana cost to cast the creature, embedded inline in the `Carta` table.
+
+  <Expandable title="CostMana fields">
+    <ResponseField name="blanc" type="int">White mana `{W}`.</ResponseField>
+    <ResponseField name="blau" type="int">Blue mana `{U}`.</ResponseField>
+    <ResponseField name="negre" type="int">Black mana `{B}`.</ResponseField>
+    <ResponseField name="vermell" type="int">Red mana `{R}`.</ResponseField>
+    <ResponseField name="verd" type="int">Green mana `{G}`.</ResponseField>
+    <ResponseField name="incolor" type="int">Colorless mana `{C}`.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Own fields
+
+<ResponseField name="forca" type="int">
+  Power — the creature's attack strength. Corresponds to the left number in the `P/T` box on a Magic card.
+</ResponseField>
+
+<ResponseField name="resistencia" type="int">
+  Toughness — the amount of damage the creature can withstand before dying. Corresponds to the right number in the `P/T` box.
+</ResponseField>
+
+<ResponseField name="tipusCriatura" type="String">
+  Creature subtype (e.g. `"Drac"`, `"Humà"`, `"Elf"`). Free-form string; not an enum.
+</ResponseField>
+
+<ResponseField name="vola" type="boolean">
+  Whether the creature has flying. Flying creatures can only be blocked by other creatures with flying or reach.
+</ResponseField>
+
+## Source code
+
+```java Criatura.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.model;
+
+import javax.persistence.Entity;
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.enums.Raresa;
+
+@Entity
+public class Criatura extends Carta {
+
+    private int forca;
+    private int resistencia;
+    private String tipusCriatura;
+    private boolean vola;
+
+    public Criatura() {
+        super();
+    }
+
+    public Criatura(String nom, String descripcio, Raresa raresa, String edicio, CostMana cost,
+                    int forca, int resistencia, String tipusCriatura, boolean vola) {
+        super(nom, descripcio, raresa, edicio, cost);
+        this.forca = forca;
+        this.resistencia = resistencia;
+        this.tipusCriatura = tipusCriatura;
+        this.vola = vola;
+    }
+
+    public int getForca() { return forca; }
+    public void setForca(int forca) { this.forca = forca; }
+
+    public int getResistencia() { return resistencia; }
+    public void setResistencia(int resistencia) { this.resistencia = resistencia; }
+
+    public String getTipusCriatura() { return tipusCriatura; }
+    public void setTipusCriatura(String tipusCriatura) { this.tipusCriatura = tipusCriatura; }
+
+    public boolean isVola() { return vola; }
+    public void setVola(boolean vola) { this.vola = vola; }
+}
+```
+
+## Example: Drac de Foc
+
+From `cartes.txt`, the _Fire Dragon_ creature:
+
+```
+CRIATURA|Drac de Foc|Un drac majestuós que crema tot al seu pas.|RARA|0,0,2,0,0,4|5|5|Drac|true
+```
+
+| Field | Value |
+|-------|-------|
+| `nom` | Drac de Foc |
+| `descripcio` | Un drac majestuós que crema tot al seu pas. |
+| `raresa` | `RARA` |
+| `cost` | `{R}{R}{C}{C}{C}{C}` — 2 Red + 4 Colorless |
+| `forca` | 5 |
+| `resistencia` | 5 |
+| `tipusCriatura` | Drac |
+| `vola` | `true` |
+
+```java
+Criatura drac = new Criatura(
+    "Drac de Foc",
+    "Un drac majestuós que crema tot al seu pas.",
+    Raresa.RARA,
+    "Alpha",
+    new CostMana(0, 0, 2, 0, 0, 4), // blau, negre, vermell, verd, blanc, incolor
+    5, 5,
+    "Drac",
+    true
+);
+```

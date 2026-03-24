@@ -1,0 +1,101 @@
+---
+title: "Orphan removal"
+description: "How JPA automatically deletes child entities that are removed from their parent's collection, as demonstrated by Jugador.mazos in the Poly Deck Engine."
+---
+
+**Orphan removal** is a JPA feature that automatically deletes a child entity from the database when it is removed from its parent's collection, without requiring an explicit `em.remove()` call on the child. A child entity is considered an **orphan** when it no longer has a reference from its owning parent.
+
+## The annotation on Jugador
+
+The `Jugador` entity enables orphan removal on its `mazos` collection:
+
+```java Jugador.java
+@OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
+private List<Mazo> mazos = new ArrayList<>();
+```
+
+Both `cascade = CascadeType.ALL` and `orphanRemoval = true` are declared together:
+
+| Annotation attribute | Effect |
+|---|---|
+| `cascade = CascadeType.ALL` | All JPA operations (`persist`, `merge`, `remove`, `refresh`, `detach`) are cascaded from `Jugador` to its `Mazo` children |
+| `orphanRemoval = true` | When a `Mazo` is removed from `jugador.mazos`, it is automatically deleted from the database on the next flush/commit |
+
+## eliminarMazoOrphanRemoval()
+
+The following method removes a `Mazo` from a `Jugador`'s list. No `em.remove()` is called on the `Mazo` directly — orphan removal handles the deletion automatically:
+
+```java GestorCartas.java
+// Tasca B: Demostració d'Orphan Removal
+public void eliminarMazoOrphanRemoval(long idJugador, int indexMazoAEsborrar) {
+    em.getTransaction().begin();
+
+    // 1. Load the parent — Jugador is now Managed
+    Jugador jugador = em.find(Jugador.class, idJugador);
+    if (jugador == null) {
+        System.out.println("ERROR: No s'ha trobat cap jugador amb l'ID " + idJugador);
+        em.getTransaction().rollback();
+        return;
+    }
+    if (jugador.getMazos().size() <= indexMazoAEsborrar) {
+        System.out.println("ERROR: El jugador " + jugador.getNick() +
+            " no té cap mazo a l'índex " + indexMazoAEsborrar);
+        em.getTransaction().rollback();
+        return;
+    }
+
+    // 2. Remove the Mazo from the collection — it is now an orphan
+    //    No em.remove(mazo) needed!
+    jugador.getMazos().remove(indexMazoAEsborrar);
+
+    // 3. commit() detects the orphan and issues DELETE
+    em.getTransaction().commit();
+    System.out.println("Mazo eliminat correctament via Orphan Removal.");
+}
+```
+
+On `commit()`, JPA detects that the `Mazo` at `indexMazoAEsborrar` is no longer referenced by any `Jugador.mazos` collection and automatically issues a `DELETE` statement for that row.
+
+## Why orphan removal is useful
+
+Without `orphanRemoval = true`, removing a child from a parent's collection only breaks the **relationship** in the join table — the child row itself remains in the database as an orphan. You would need to explicitly call `em.remove(mazo)` to delete it:
+
+```java
+// Without orphanRemoval — manual deletion required
+em.getTransaction().begin();
+Jugador jugador = em.find(Jugador.class, idJugador);
+Mazo mazo = jugador.getMazos().remove(index);  // breaks the FK/join-table link
+em.remove(mazo);                               // must explicitly delete the row
+em.getTransaction().commit();
+```
+
+With `orphanRemoval = true`, the single `list.remove()` call is sufficient — JPA takes care of the `DELETE`.
+
+## Contrast: colleccio has no orphan removal
+
+The `Jugador.colleccio` field uses `@ManyToMany` **without** `orphanRemoval`:
+
+```java Jugador.java
+@ManyToMany
+private List<Carta> colleccio = new ArrayList<>();
+```
+
+Removing a `Carta` from `colleccio` only removes the row from the join table — the `Carta` entity itself is **not deleted**. This is intentional: a `Carta` can belong to multiple collections and decks simultaneously, so deleting it when one player removes it would corrupt other relationships.
+
+| Field | Relationship | orphanRemoval | Removing child from list |
+|---|---|---|---|
+| `jugador.mazos` | `@OneToMany` | `true` | Deletes the `Mazo` row from the DB |
+| `jugador.colleccio` | `@ManyToMany` | `false` (default) | Only removes the join-table entry; `Carta` row is preserved |
+
+<Warning>
+Orphan removal only works when the **parent entity is managed**. If `Jugador` is detached and you remove a `Mazo` from `jugador.getMazos()`, the change is not tracked by JPA and the `Mazo` will not be deleted. Always perform collection mutations within an active transaction with a managed parent.
+</Warning>
+
+<CardGroup cols={2}>
+  <Card title="Entity lifecycle" href="/jpa/entity-lifecycle">
+    How entities transition between Transient, Managed, Detached, and Removed states.
+  </Card>
+  <Card title="Detached entities and merge" href="/jpa/detached-merge">
+    What happens when a parent entity is detached and how to re-attach it before modifying collections.
+  </Card>
+</CardGroup>

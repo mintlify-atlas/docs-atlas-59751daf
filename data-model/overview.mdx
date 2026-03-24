@@ -1,0 +1,106 @@
+---
+title: "Data model overview"
+description: "A complete overview of all JPA entities, their inheritance hierarchy, and relationships in the Magic ObjDB: The Poly Deck Engine."
+---
+
+The Magic ObjDB data model is built around a card (`Carta`) hierarchy using JPA's **JOINED inheritance strategy**. Three concrete card types extend the abstract base, while `Mazo` (deck) and `Jugador` (player) form the ownership layer.
+
+## Inheritance diagram
+
+```
+          ┌───────────────────────┐
+          │   Carta  (abstract)   │
+          │  @Entity @Inheritance │
+          │  strategy = JOINED    │
+          └──────────┬────────────┘
+                     │
+         ┌───────────┼────────────┐
+         ▼           ▼            ▼
+    ┌─────────┐ ┌─────────┐ ┌───────────┐
+    │ Criatura│ │  Terra  │ │ Encanteri │
+    │ @Entity │ │ @Entity │ │  @Entity  │
+    └─────────┘ └─────────┘ └───────────┘
+
+
+          ┌──────────┐       ┌──────────┐
+          │  Jugador │ ──●── │   Mazo   │
+          │  @Entity │ 1  *  │  @Entity │
+          └──────────┘       └────┬─────┘
+                                  │ @ManyToMany
+                                  │
+                             ┌────▼─────┐
+                             │  Carta   │
+                             │(abstract)│
+                             └──────────┘
+```
+
+## JOINED inheritance strategy
+
+`Carta` declares `@Inheritance(strategy = InheritanceType.JOINED)`. This means:
+
+- A single **`Carta` table** holds all shared columns (`id`, `nom`, `descripcio`, `raresa`, `edicio`, and the embedded `CostMana` columns).
+- Each concrete subclass gets its **own table** containing only the columns specific to that type, linked to `Carta` via a shared primary key.
+- Querying any subtype performs a `JOIN` between the `Carta` table and the subtype table.
+
+<Note>
+  JOINED is the most normalized inheritance strategy. It avoids null columns but requires a join per query. For a card collection where each subtype has distinct fields, this is the appropriate choice.
+</Note>
+
+## Entity summary
+
+| Entity | Type | Table(s) | Description |
+|--------|------|----------|-------------|
+| `Carta` | Abstract `@Entity` | `Carta` | Base card. Never instantiated directly. Holds shared fields and the embedded `CostMana`. |
+| `Criatura` | Concrete `@Entity` | `Carta` + `Criatura` | Creature card with power/toughness and flying ability. |
+| `Terra` | Concrete `@Entity` | `Carta` + `Terra` | Land card. Produces colored mana; zero mana cost to play. |
+| `Encanteri` | Concrete `@Entity` | `Carta` + `Encanteri` | Spell/enchantment card with a type and instant flag. |
+| `Mazo` | `@Entity` | `Mazo` | A named deck holding a list of cards via `@ManyToMany`. |
+| `Jugador` | `@Entity` | `Jugador` | A player with a level, owned decks, and a card collection. |
+| `CostMana` | `@Embeddable` | _(inline in `Carta`)_ | Mana cost broken down by color. Stored as columns in the `Carta` table. |
+
+## CostMana embeddable
+
+`CostMana` is annotated `@Embeddable` and embedded in `Carta` via `@Embedded`. It stores the mana cost as six integer columns — one per color — directly inside the `Carta` table. There is no separate `CostMana` table.
+
+```java
+// Stored as: blanc, blau, negre, vermell, verd, incolor columns in CARTA
+@Embedded
+private CostMana cost;
+```
+
+Each field maps to a Magic: The Gathering mana symbol:
+
+| Field | MTG Symbol | Color |
+|-------|-----------|-------|
+| `blanc` | `{W}` | White |
+| `blau` | `{U}` | Blue |
+| `negre` | `{B}` | Black |
+| `vermell` | `{R}` | Red |
+| `verd` | `{G}` | Green |
+| `incolor` | `{C}` | Colorless |
+
+## Navigate the model
+
+<CardGroup cols={2}>
+  <Card title="Carta" href="/data-model/carta" icon="layer-group">
+    Abstract base entity. All shared fields and JPA inheritance setup.
+  </Card>
+  <Card title="Criatura" href="/data-model/criatura" icon="dragon">
+    Creature cards with power, toughness, creature type, and flying.
+  </Card>
+  <Card title="Terra" href="/data-model/terra" icon="mountain">
+    Land cards that produce colored mana. Free to play.
+  </Card>
+  <Card title="Encanteri" href="/data-model/encanteri" icon="wand-magic-sparkles">
+    Spell and enchantment cards with type and instant flag.
+  </Card>
+  <Card title="Mazo" href="/data-model/mazo" icon="cards-blank">
+    Deck entity. Groups cards via a many-to-many relationship.
+  </Card>
+  <Card title="Jugador" href="/data-model/jugador" icon="user">
+    Player entity with decks, levels, and a card collection.
+  </Card>
+  <Card title="Enums" href="/data-model/enums" icon="list">
+    Color and Raresa enumerations with MTG equivalents.
+  </Card>
+</CardGroup>

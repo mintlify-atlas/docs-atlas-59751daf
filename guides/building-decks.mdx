@@ -1,0 +1,258 @@
+---
+title: "Building players and decks"
+description: "How to create Jugador and Mazo entities, assign cards, and manage the ownership lifecycle including orphan removal."
+---
+
+The engine models its ownership structure as a three-level graph:
+
+```
+Jugador  ──(OneToMany)──▶  Mazo  ──(ManyToMany)──▶  Carta
+```
+
+- A **`Jugador`** (player) owns one or more **`Mazo`** (deck) instances via a `@OneToMany` relationship with `cascade = CascadeType.ALL` and `orphanRemoval = true`.
+- Each **`Mazo`** holds a collection of **`Carta`** instances via a `@ManyToMany` relationship with `cascade = CascadeType.PERSIST`.
+- The `Carta` hierarchy (`Criatura`, `Terra`, `Encanteri`) is shared — the same card object can appear in multiple decks.
+
+## The entity classes
+
+```java title="Jugador.java"
+@Entity
+public class Jugador {
+
+    @Id
+    @GeneratedValue
+    private Long id; 
+    private String nick; 
+    private int nivell; 
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true) 
+    private List<Mazo> mazos = new ArrayList<>();
+    @ManyToMany 
+    private List<Carta> colleccio = new ArrayList<>(); 
+    // ...
+}
+```
+
+```java title="Mazo.java"
+@Entity
+public class Mazo {
+
+    @Id
+    @GeneratedValue
+    private Long id; 
+    private String nom; 
+    private LocalDate dataCreacio;
+    @ManyToMany(cascade = CascadeType.PERSIST) 
+    private List<Carta> cartes = new ArrayList<>();
+    // ...
+
+    public void addCarta(Carta carta) {
+        this.cartes.add(carta);
+    }
+    
+    public void removeCarta(Carta carta) {
+        this.cartes.remove(carta);
+    }
+}
+```
+
+## Cascade behaviour
+
+| Relationship | Cascade | Effect |
+|---|---|---|
+| `Jugador` → `Mazo` | `CascadeType.ALL` | Persisting, merging, or removing a `Jugador` propagates the same operation to all its `Mazo` children. |
+| `Jugador` → `Mazo` | `orphanRemoval = true` | Removing a `Mazo` from `jugador.getMazos()` automatically deletes the `Mazo` row on commit. |
+| `Mazo` → `Carta` | `CascadeType.PERSIST` | Persisting a `Mazo` cascades to any `Carta` in its collection that is not yet managed. Cards already in the database are referenced, not duplicated. |
+
+## Creating a player and deck
+
+The `crearJugadorAmbMazo()` method handles both creation and reuse: if a player with the given nick already exists it reuses that record, otherwise it creates a new one.
+
+```java title="GestorCartas.java"
+// Operació CREATE: Jugadors i Mazos
+public void crearJugadorAmbMazo(String nick, int nivell, String nomMazo, List<Carta> cartesMazo) {
+    em.getTransaction().begin();
+    try {
+        // Comprovem si el jugador ja existeix
+        List<Jugador> resultats = em.createQuery("SELECT j FROM Jugador j WHERE j.nick = :nick", Jugador.class)
+                                    .setParameter("nick", nick)
+                                    .getResultList();
+        Jugador jugador;
+        // Si no existeix, el creem de zero
+        if (resultats.isEmpty()) {
+            jugador = new Jugador();
+            jugador.setNick(nick);
+            jugador.setNivell(nivell);
+            System.out.println("Nou jugador creat: " + nick);
+        } 
+        // Si ja existeix, l'aprofitem
+        else {
+            jugador = resultats.get(0);
+            System.out.println("Jugador existent trobat: " + nick);
+        }
+
+        // Creem el nou Mazo
+        Mazo mazo = new Mazo();
+        mazo.setNom(nomMazo);
+        // Li assignem les cartes
+        mazo.setCartes(cartesMazo); 
+        // Li assignem al jugador un nou Mazo
+        jugador.getMazos().add(mazo);
+        // Llavors, guardem el jugador
+        em.persist(jugador); 
+        em.getTransaction().commit();
+        // Informem de l'assignació del Mazo
+        System.out.println("Mazo '" + nomMazo + "' assignat correctament a " + nick + ".");
+    } 
+    // Captura d'errors
+    catch (Exception e) {
+        em.getTransaction().rollback();
+        System.err.println("Error creant jugador/mazo: " + e.getMessage());
+    }
+}
+```
+
+**Step by step what the method does:**
+
+<Steps>
+  <Step title="Look up the player by nick">
+    Executes `SELECT j FROM Jugador j WHERE j.nick = :nick`. If no result is found, a new `Jugador` is constructed with the provided nick and level.
+  </Step>
+  <Step title="Create a new Mazo">
+    Instantiates a `Mazo`, sets its name, and assigns the provided card list via `mazo.setCartes(cartesMazo)`.
+  </Step>
+  <Step title="Link the deck to the player">
+    Appends the new `Mazo` to `jugador.getMazos()`. Because the relationship is `OneToMany`, the deck is now owned by this player.
+  </Step>
+  <Step title="Persist and commit">
+    `em.persist(jugador)` is called once. The `CascadeType.ALL` on `Jugador.mazos` cascades the persist to the new `Mazo`. The `CascadeType.PERSIST` on `Mazo.cartes` then cascades to any cards in the list that are not yet managed (typically a no-op when cards are already in the DB from a prior import). The transaction is committed, flushing everything to the database.
+  </Step>
+</Steps>
+
+## Adding individual cards to a deck
+
+You can build a deck card-by-card using `Mazo.addCarta()` before persisting:
+
+```java title="Mazo.java"
+public void addCarta(Carta carta) {
+    this.cartes.add(carta);
+}
+```
+
+Usage example:
+
+```java
+Mazo mazo = new Mazo();
+mazo.setNom("Dragon Rush");
+mazo.addCarta(dracDeFoc);     // Criatura
+mazo.addCarta(muntanyaVolcanica); // Terra
+mazo.addCarta(bolaDeFoc);     // Encanteri
+```
+
+## Listing all players
+
+`obtenirTotsElsJugadors()` returns every registered player:
+
+```java title="GestorCartas.java"
+// Retorna tots els jugadors registrats a la BD.
+public List<Jugador> obtenirTotsElsJugadors() {
+    return em.createQuery("SELECT j FROM Jugador j", Jugador.class).getResultList();
+}
+```
+
+The application uses this to display a player roster before prompting for a nick:
+
+```
+--- JUGADORS DISPONIBLES ---
+ID: 1 | Nick: MagicFan | Nivell: 10 | Mazos creats: 1
+----------------------------
+```
+
+## Orphan removal: deleting a deck
+
+Because `Jugador.mazos` is annotated with `orphanRemoval = true`, removing a `Mazo` instance from the list and committing is sufficient to delete the row — no explicit `em.remove()` is needed.
+
+```java title="GestorCartas.java"
+// Tasca B: Demostració d'Orphan Removal
+public void eliminarMazoOrphanRemoval(long idJugador, int indexMazoAEsborrar) {
+    // Iniciem la transacció
+    em.getTransaction().begin();
+    Jugador jugador = em.find(Jugador.class, idJugador);
+    // Comprovem si el jugador existeix
+    if (jugador == null) {
+        System.out.println("ERROR: No s'ha trobat cap jugador amb l'ID " + idJugador);
+        em.getTransaction().rollback();
+        return;
+    }
+    // Comprovem si el mazo existeix
+    if (jugador.getMazos().size() <= indexMazoAEsborrar) {
+        System.out.println("ERROR: El jugador " + jugador.getNick() + " no té cap mazo a l'índex " + indexMazoAEsborrar);
+        em.getTransaction().rollback();
+        return;
+    }
+    // Eliminem el mazo
+    jugador.getMazos().remove(indexMazoAEsborrar);
+    em.getTransaction().commit();
+    System.out.println("Mazo eliminat correctament via Orphan Removal.");
+}
+```
+
+The call to `jugador.getMazos().remove(indexMazoAEsborrar)` detaches the `Mazo` from its parent. On `commit()`, the JPA provider detects that the `Mazo` is no longer referenced by any `Jugador` and automatically issues a `DELETE` for it.
+
+<Note>
+Orphan removal only deletes the `Mazo` row. The `Carta` records referenced by the deck are **not** deleted, because the `Mazo` → `Carta` relationship is `ManyToMany` — cards are shared and not owned exclusively by one deck.
+</Note>
+
+## Complete end-to-end example
+
+The following shows the full workflow from a fresh database: import cards, build a deck, save it, and then query the player list.
+
+<Steps>
+  <Step title="Initialise the EntityManager">
+    ```java
+    EntityManager em = JPAUtil.getEntityManager();
+    GestorCartas gestor = new GestorCartas(em);
+    ```
+  </Step>
+  <Step title="Clear and import cards">
+    ```java
+    gestor.netejarBaseDades();
+    gestor.importarCartes("src/main/resources/data/cartes.txt");
+    // 15 cards are now persisted
+    ```
+  </Step>
+  <Step title="Retrieve the imported cards">
+    ```java
+    List<Carta> totsLesCartes = gestor.obtenirTotesLesCartes();
+    // totsLesCartes.size() == 15
+    ```
+  </Step>
+  <Step title="Create a player with a deck containing all cards">
+    ```java
+    gestor.crearJugadorAmbMazo("MagicFan", 10, "Starter Deck", totsLesCartes);
+    // Output: Nou jugador creat: MagicFan
+    // Output: Mazo 'Starter Deck' assignat correctament a MagicFan.
+    ```
+  </Step>
+  <Step title="Verify the player was saved">
+    ```java
+    List<Jugador> jugadors = gestor.obtenirTotsElsJugadors();
+    // jugadors.size() == 1
+    // jugadors.get(0).getNick() == "MagicFan"
+    // jugadors.get(0).getMazos().size() == 1
+    ```
+  </Step>
+  <Step title="Query average creature power for the player">
+    ```java
+    Double avg = gestor.calcularMitjanaForcaCriaturesJugador("MagicFan");
+    // avg == 3.0  (powers: 5 + 2 + 3 + 4 + 1 = 15 / 5)
+    ```
+  </Step>
+  <Step title="Delete the deck via orphan removal">
+    ```java
+    long jugadorId = jugadors.get(0).getId();
+    gestor.eliminarMazoOrphanRemoval(jugadorId, 0);
+    // Output: Mazo eliminat correctament via Orphan Removal.
+    // The Mazo row is deleted; the 15 Carta rows remain.
+    ```
+  </Step>
+</Steps>

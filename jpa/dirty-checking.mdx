@@ -1,0 +1,98 @@
+---
+title: "Dirty checking"
+description: "How JPA automatically detects changes to managed entities and flushes them to the database on commit — no explicit em.update() or em.merge() required."
+---
+
+JPA **dirty checking** is the mechanism by which an `EntityManager` automatically detects mutations to managed entities and synchronises those changes to the database when the transaction commits — without any call to `em.update()` (which does not exist in JPA) or `em.merge()`.
+
+## How it works
+
+When an entity becomes **managed** (via `em.find()`, `em.persist()`, or a JPQL query), the `EntityManager` takes an internal snapshot of its field values. On flush (triggered by `commit()` or an explicit `em.flush()` call), JPA compares the current field values against the snapshot. Any entity whose current state differs from the snapshot is considered **dirty**, and a corresponding `UPDATE` statement is issued.
+
+```
+em.find() called
+     │
+     ▼
+Entity enters Managed state + snapshot taken
+     │
+     ▼
+Application calls setter on the entity
+     │
+     ▼
+em.getTransaction().commit() triggered
+     │
+     ▼
+JPA compares current state vs. snapshot → entity is dirty
+     │
+     ▼
+UPDATE issued automatically
+```
+
+## actualitzarDescripcioManaged()
+
+This method in `GestorCartas` is the canonical dirty-checking demonstration in the project:
+
+```java GestorCartas.java
+// Tasca A: Demostració de Dirty Checking
+public void actualitzarDescripcioManaged(long idCarta, String novaDescripcio) {
+    // 1. Begin transaction
+    em.getTransaction().begin();
+
+    // 2. em.find() loads the entity → it is now Managed
+    //    JPA snapshots its current field values
+    Carta carta = em.find(Carta.class, idCarta);
+
+    if (carta != null) {
+        // 3. Setter called on the managed entity
+        //    JPA does NOT need to be notified — it will detect this automatically
+        carta.setDescripcio(novaDescripcio);
+
+        // 4. commit() triggers flush → dirty check runs
+        //    JPA detects descripcio changed → issues UPDATE
+        em.getTransaction().commit();
+        System.out.println("Carta actualitzada via Dirty Checking.");
+    } else {
+        em.getTransaction().rollback();
+        System.out.println("No s'ha trobat cap carta amb aquest ID.");
+    }
+}
+```
+
+Notice that there is no `em.merge(carta)` or `em.update(carta)` call anywhere. The `commit()` is sufficient — JPA flushes the dirty entity automatically.
+
+## Lifecycle summary
+
+<Steps>
+  <Step title="Begin transaction">
+    `em.getTransaction().begin()` opens a transaction. The EntityManager is now tracking changes.
+  </Step>
+  <Step title="Load entity (enters Managed state)">
+    `em.find(Carta.class, idCarta)` fetches the entity from the database (or L1 cache) and registers it as managed. JPA records a snapshot of all field values at this point.
+  </Step>
+  <Step title="Modify the entity">
+    `carta.setDescripcio(novaDescripcio)` updates the in-memory field. The EntityManager is not explicitly notified — changes to managed entities are always visible to the EM.
+  </Step>
+  <Step title="Commit triggers automatic flush">
+    `em.getTransaction().commit()` causes JPA to compare each managed entity's current state against its snapshot. Because `descripcio` changed, JPA issues an `UPDATE` statement before committing the transaction.
+  </Step>
+</Steps>
+
+<Tip>
+Dirty checking only works for **managed** entities — those associated with an active, open `EntityManager`. If you close the EM or detach the entity before committing, JPA stops tracking it and the change is lost. Use `em.merge()` to re-attach a detached entity. See [Detached entities and merge](/jpa/detached-merge).
+</Tip>
+
+## What does NOT trigger dirty checking
+
+- Changes to **transient** objects (never persisted).
+- Changes to **detached** objects (EM was closed or entity was evicted).
+- Changes made **after** `commit()` or `rollback()` — the transaction is over.
+- Changes to fields that are marked `@Transient` — JPA ignores them entirely.
+
+<CardGroup cols={2}>
+  <Card title="Entity lifecycle" href="/jpa/entity-lifecycle">
+    Full overview of the Transient, Managed, Detached, and Removed states.
+  </Card>
+  <Card title="Detached entities and merge" href="/jpa/detached-merge">
+    What to do when an entity is no longer managed and you need to persist changes.
+  </Card>
+</CardGroup>

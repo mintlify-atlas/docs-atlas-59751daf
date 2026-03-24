@@ -1,0 +1,88 @@
+---
+title: "Enums"
+description: "Color and Raresa enumerations used across the Magic ObjDB data model, with MTG equivalents."
+---
+
+Two enumerations are defined in the `model.enums` package and used across the card entities.
+
+## Color
+
+`Color` represents the five colors of Magic: The Gathering mana, plus a colorless option. It is used in:
+
+- `Terra.produccio` — the mana color a land produces.
+- `CostMana` uses individual `int` fields per color rather than this enum, but the enum names mirror those fields exactly.
+
+```java Color.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.model.enums;
+
+public enum Color {
+    BLANC,
+    BLAU,
+    NEGRE,
+    VERMELL,
+    VERD,
+    INCOLOR
+}
+```
+
+### Color values
+
+| Enum value | MTG color | MTG symbol | Basic land |
+|-----------|-----------|------------|------------|
+| `BLANC` | White | `{W}` | Plains |
+| `BLAU` | Blue | `{U}` | Island |
+| `NEGRE` | Black | `{B}` | Swamp |
+| `VERMELL` | Red | `{R}` | Mountain |
+| `VERD` | Green | `{G}` | Forest |
+| `INCOLOR` | Colorless | `{C}` | _(none)_ |
+
+<Note>
+  `Color` is stored as a string in the database via `@Enumerated(EnumType.STRING)` on `Terra.produccio`. This means the column stores `"VERMELL"` rather than an integer ordinal, making the data human-readable and safe to reorder.
+</Note>
+
+---
+
+## Raresa
+
+`Raresa` represents the rarity of a card. It is used in `Carta.raresa` (inherited by all subtypes) and stored as a string via `@Enumerated(EnumType.STRING)`.
+
+```java Raresa.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.model.enums;
+
+public enum Raresa {
+    COMUNA,
+    INFREQÜENT,
+    RARA,
+    MITICA
+}
+```
+
+### Raresa values
+
+| Enum value | MTG rarity | Card frame color |
+|-----------|------------|------------------|
+| `COMUNA` | Common | Black set symbol |
+| `INFREQÜENT` | Uncommon | Silver set symbol |
+| `RARA` | Rare | Gold set symbol |
+| `MITICA` | Mythic Rare | Orange/red set symbol |
+
+<Tip>
+  In the seed data (`cartes.txt`), the rarity distribution follows typical MTG set design: most lands and simple spells are `COMUNA`, with `INFREQÜENT` and `RARA` for stronger cards, and `MITICA` reserved for the most powerful effects like `Espectre de la Nit` and `Judici Diví`.
+</Tip>
+
+### Rarity in the seed data
+
+| Card | Type | Raresa |
+|------|------|--------|
+| Cavaller de l'Alba | Criatura | `COMUNA` |
+| Guerrer de la Selva | Criatura | `COMUNA` |
+| Muntanya Volcànica | Terra | `COMUNA` |
+| Illa de Cristall | Terra | `COMUNA` |
+| Creixement Gegant | Encanteri | `COMUNA` |
+| Llum de Curació | Encanteri | `COMUNA` |
+| Cranc de Vidre | Criatura | `INFREQÜENT` |
+| Contrahechizo | Encanteri | `INFREQÜENT` |
+| Drac de Foc | Criatura | `RARA` |
+| Bola de Foc | Encanteri | `RARA` |
+| Espectre de la Nit | Criatura | `MITICA` |
+| Judici Diví | Encanteri | `MITICA` |

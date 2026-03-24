@@ -1,0 +1,262 @@
+---
+title: "Importing cards from file"
+description: "How to load cards from a pipe-delimited text file into ObjectDB using LectorFicheros and GestorCartas."
+---
+
+The engine seeds its card database by reading a plain text file — `cartes.txt` — where each line describes one card in a pipe-delimited format. `LectorFicheros.llegirCartes()` parses the file into JPA entity objects, and `GestorCartas.importarCartes()` persists them in a single transaction.
+
+## The `cartes.txt` file format
+
+Each data line starts with one of three card-type keywords (`CRIATURA`, `TERRA`, `ENCANTERI`) followed by pipe-separated (`|`) fields. Lines starting with `#` are comments and are ignored. Blank lines are also ignored.
+
+### CRIATURA
+
+```
+CRIATURA|nom|descripcio|raresa|Blau,Negre,Vermell,Verd,Blanc,Incolor|forca|resistencia|tipusCriatura|vola
+```
+
+| Position | Field | Type | Notes |
+|----------|-------|------|-------|
+| 0 | `CRIATURA` | keyword | Record type identifier |
+| 1 | `nom` | String | Card name |
+| 2 | `descripcio` | String | Flavour / rules text |
+| 3 | `raresa` | Enum | `COMUNA`, `INFREQÜENT`, `RARA`, `MITICA` |
+| 4 | cost (mana) | `Blau,Negre,Vermell,Verd,Blanc,Incolor` | Six comma-separated integers |
+| 5 | `forca` | int | Power |
+| 6 | `resistencia` | int | Toughness |
+| 7 | `tipusCriatura` | String | Creature subtype |
+| 8 | `vola` | boolean | `true` / `false` |
+
+### TERRA
+
+```
+TERRA|nom|descripcio|raresa|colorProduccio|esBasica
+```
+
+| Position | Field | Type | Notes |
+|----------|-------|------|-------|
+| 0 | `TERRA` | keyword | Record type identifier |
+| 1 | `nom` | String | Card name |
+| 2 | `descripcio` | String | Flavour text |
+| 3 | `raresa` | Enum | Rarity value |
+| 4 | `colorProduccio` | Enum | `BLAU`, `NEGRE`, `VERMELL`, `VERD`, `BLANC`, `INCOLOR` |
+| 5 | `esBasica` | boolean | `true` for basic lands |
+
+<Note>
+Land cards always have a zero mana cost. The parser hardcodes `new CostMana(0,0,0,0,0,0)` for every `TERRA` record — the mana cost field is not present in the file.
+</Note>
+
+### ENCANTERI
+
+```
+ENCANTERI|nom|descripcio|raresa|Blau,Negre,Vermell,Verd,Blanc,Incolor|tipus|esInstantani
+```
+
+| Position | Field | Type | Notes |
+|----------|-------|------|-------|
+| 0 | `ENCANTERI` | keyword | Record type identifier |
+| 1 | `nom` | String | Card name |
+| 2 | `descripcio` | String | Rules text |
+| 3 | `raresa` | Enum | Rarity value |
+| 4 | cost (mana) | `Blau,Negre,Vermell,Verd,Blanc,Incolor` | Six comma-separated integers |
+| 5 | `tipus` | String | Enchantment subtype (`Global`, `Aura`, `Maledicció`) |
+| 6 | `esInstantani` | boolean | `true` if it can be cast as an instant |
+
+## The mana cost column
+
+For `CRIATURA` and `ENCANTERI` cards, column 4 is a single comma-separated string of **six** integers in this fixed order:
+
+```
+Blau,Negre,Vermell,Verd,Blanc,Incolor
+```
+
+The `parsejarCost()` helper maps them to the `CostMana` constructor, which takes its arguments in a *different* order (`blanc, blau, negre, vermell, verd, incolor`). The mapping is:
+
+```java title="LectorFicheros.java"
+// Aquesta funcio es exclusivament per formatejar el cost de mana.
+private static CostMana parsejarCost(String costString) {
+    String[] c = costString.split(",");
+    // Blau, Negre, Vermell, Verd, Blanc, Incolor
+    return new CostMana(
+        Integer.parseInt(c[4].trim()), Integer.parseInt(c[0].trim()), Integer.parseInt(c[1].trim()), 
+        Integer.parseInt(c[2].trim()), Integer.parseInt(c[3].trim()), Integer.parseInt(c[5].trim())
+    );
+}
+```
+
+So `0,0,2,0,0,4` (Blau=0, Negre=0, Vermell=2, Verd=0, Blanc=0, Incolor=4) becomes `new CostMana(blanc=0, blau=0, negre=0, vermell=2, verd=0, incolor=4)`.
+
+## Full `cartes.txt` listing
+
+The seed file ships 15 cards: 5 creatures, 5 lands, and 5 enchantments.
+
+```text title="src/main/resources/data/cartes.txt"
+# TIPUS | NOM | DESCRIPCIO | RARESA | COST_MANA (Blau,Negre,Vermell,Verd,Blanc,Incolor) | ATRIBUTS_ESPECIFICS
+# ---------------------------------------------------------------------------------------------------------
+# CRIATURES: Nom | Desc | Raresa | Cost | Força | Resistència | Tipus | Vola
+CRIATURA|Drac de Foc|Un drac majestuós que crema tot al seu pas.|RARA|0,0,2,0,0,4|5|5|Drac|true
+CRIATURA|Cavaller de l'Alba|Protector del regne amb armadura de plata.|COMUNA|0,0,0,0,2,1|2|2|Humà|false
+CRIATURA|Guerrer de la Selva|Coneix cada racó del bosc primigeni.|COMUNA|0,0,0,2,0,1|3|2|Elf|false
+CRIATURA|Espectre de la Nit|Apareix quan la lluna és plena i s'emporta les
+ànimes.|MITICA|0,3,0,0,0,2|4|3|Espectre|true
+CRIATURA|Cranc de Vidre|Una criatura marina amb una closca transparent.|INFREQÜENT|2,0,0,0,0,2|1|5|Cranc|false
+# TERRES: Nom | Desc | Raresa | Color_Produccio | Es_Basica
+TERRA|Muntanya Volcànica|Una muntanya que fumeja constantment.|COMUNA|VERMELL|true
+TERRA|Illa de Cristall|Aigües tan pures que semblen miralls.|COMUNA|BLAU|true
+TERRA|Pantà Corrupte|Aigües estancades plenes de malediccions.|COMUNA|NEGRE|true
+TERRA|Bosc Ancestral|Arbres que han vist néixer el món.|COMUNA|VERD|true
+TERRA|Plana Daurada|Camps infinits de blat sota el sol.|COMUNA|BLANC|true
+# ENCANTERIS: Nom | Desc | Raresa | Cost | Tipus | Es_Instantani
+ENCANTERI|Bola de Foc|Explosió massiva que danya a l'enemic.|RARA|0,0,1,0,0,2|Global|false
+ENCANTERI|Contrahechizo|Anul·la la màgia de l'adversari al moment.|INFREQÜENT|2,0,0,0,0,0|Aura|true
+ENCANTERI|Creixement Gegant|La criatura objectiu guanya força temporalment.|COMUNA|0,0,0,1,0,0|Aura|true
+ENCANTERI|Judici Diví|Elimina totes les amenaces del camp.|MITICA|0,0,0,0,3,3|Global|false
+ENCANTERI|Llum de Curació|Restaura la salut del jugador.|COMUNA|0,0,0,0,1,1|Maledicció|true
+```
+
+## Multi-line descriptions
+
+A description can span two physical lines in the file. The `Espectre de la Nit` card demonstrates this:
+
+```text
+CRIATURA|Espectre de la Nit|Apareix quan la lluna és plena i s'emporta les
+ànimes.|MITICA|0,3,0,0,0,2|4|3|Espectre|true
+```
+
+The parser handles this with an accumulator variable (`líniaAcumulada`). A new card record only begins when a line starts with `CRIATURA`, `TERRA`, or `ENCANTERI`. Any line that does **not** start with one of those keywords is appended (with a space) to the current accumulator before parsing:
+
+```java title="LectorFicheros.java"
+// Si detecta una nova carta, processa l'anterior (si existeix)
+if (línia.startsWith("CRIATURA") || línia.startsWith("TERRA") || línia.startsWith("ENCANTERI")) {
+    if (!líniaAcumulada.isEmpty()) {
+        cartesLlegides.add(parsejarLinia(líniaAcumulada));
+    }
+    líniaAcumulada = línia;
+} else {
+    // Uneix la línia trencada (ex. la descripció de l'Espectre)
+    líniaAcumulada += " " + línia;
+}
+```
+
+The final accumulated record is flushed after the loop ends, so the last card in the file is never dropped.
+
+## How `llegirCartes()` works
+
+The full parsing pipeline in `LectorFicheros.java`:
+
+```java title="LectorFicheros.java"
+public static List<Carta> llegirCartes(String rutaArxiu) {
+    List<Carta> cartesLlegides = new ArrayList<>();
+    
+    try (BufferedReader br = new BufferedReader(new FileReader(rutaArxiu))) {
+        String línia;
+        String líniaAcumulada = "";
+
+        while ((línia = br.readLine()) != null) {
+            línia = línia.trim();
+            
+            // Ignorar comentaris i línies buides
+            if (línia.startsWith("#") || línia.isEmpty()) {
+                continue;
+            }
+
+            // Si detecta una nova carta, processa l'anterior (si existeix)
+            if (línia.startsWith("CRIATURA") || línia.startsWith("TERRA") || línia.startsWith("ENCANTERI")) {
+                if (!líniaAcumulada.isEmpty()) {
+                    cartesLlegides.add(parsejarLinia(líniaAcumulada));
+                }
+                líniaAcumulada = línia;
+            } else {
+                // Uneix la línia trencada (ex. la descripció de l'Espectre)
+                líniaAcumulada += " " + línia;
+            }
+        }
+        
+        // Afegir l'última carta
+        if (!líniaAcumulada.isEmpty()) {
+            cartesLlegides.add(parsejarLinia(líniaAcumulada));
+        }
+
+    } catch (IOException e) {
+        System.err.println("Error físic llegint el fitxer: " + e.getMessage());
+    }
+    
+    return cartesLlegides;
+}
+```
+
+## Hardcoded edition
+
+The parser does not read an edition field from the file. Every card parsed by `LectorFicheros` is assigned the edition `"Core Set 2026"` at the top of `parsejarLinia()`:
+
+```java title="LectorFicheros.java"
+String edicioDefecte = "Core Set 2026";
+```
+
+To support multiple editions you would need to add an edition column to the file format and update `parsejarLinia()` accordingly.
+
+## The `importarCartes()` method
+
+`GestorCartas.importarCartes()` delegates file reading to `LectorFicheros`, then persists each resulting `Carta` entity in a single transaction:
+
+```java title="GestorCartas.java"
+// Operació CREATE: Càrrega des de Fitxer
+public void importarCartes(String rutaArxiu) {
+    System.out.println("Llegint cartes del fitxer...");
+    // Llegim les cartes del fitxer
+    List<Carta> cartesNoves = LectorFicheros.llegirCartes(rutaArxiu);
+    // Comprovem si s'han trobat cartes
+    if (cartesNoves.isEmpty()) {
+        System.out.println("No s'han trobat cartes per importar.");
+        return;
+    }
+    // Informem de les cartes que s'importaran
+    System.out.println("Iniciant persistència de " + cartesNoves.size() + " cartes...");
+    em.getTransaction().begin();
+    try {
+        // Persistim les noves cartes
+        for (Carta c : cartesNoves) {
+            em.persist(c);
+        }
+        // Confirmem la transacció
+        em.getTransaction().commit();
+        // Informem de les cartes importades
+        System.out.println("Cartes importades correctament a la base de dades.");
+    } 
+    // Captura d'errors
+    catch (Exception e) {
+        System.err.println("Error durant la persistència: " + e.getMessage());
+        if (em.getTransaction().isActive()) {
+            em.getTransaction().rollback();
+        }
+    }
+}
+```
+
+## Clearing the database before import
+
+The application's menu always calls `netejarBaseDades()` **before** `importarCartes()`. This method issues three bulk-delete JPQL statements inside a transaction, removing all `Jugador`, `Mazo`, and `Carta` records in dependency order:
+
+```java title="GestorCartas.java"
+// Mètode auxiliar per netejar la base de dades abans d'una importació.
+public void netejarBaseDades() {
+    System.out.println("AVÍS: Esborrant totes les dades actuals de la BD per fer una importació neta...");
+    em.getTransaction().begin();
+    try {
+        // L'ordre és important per les relacions: primer esborrem els que tenen dependències
+        em.createQuery("DELETE FROM Jugador").executeUpdate();
+        em.createQuery("DELETE FROM Mazo").executeUpdate();
+        em.createQuery("DELETE FROM Carta").executeUpdate();
+        em.getTransaction().commit();
+        System.out.println("Base de dades netejada correctament.");
+    } 
+    catch (Exception e) {
+        em.getTransaction().rollback();
+        System.err.println("Error netejant la base de dades: " + e.getMessage());
+    }
+}
+```
+
+<Warning>
+`netejarBaseDades()` permanently deletes **all** `Jugador`, `Mazo`, and `Carta` rows before importing. Any players, decks, or cards that existed in the database beforehand are irrecoverably lost. Never call this method in a production environment unless a full re-seed is intended.
+</Warning>

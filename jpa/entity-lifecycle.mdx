@@ -1,0 +1,138 @@
+---
+title: "Entity lifecycle"
+description: "The four JPA entity states — Transient, Managed, Detached, and Removed — and how each state is demonstrated in the Poly Deck Engine."
+---
+
+Every JPA entity instance exists in one of four states relative to an `EntityManager`. Understanding these states is essential for predicting when data is persisted, tracked, or deleted.
+
+## The four states
+
+| State | Description | How to enter |
+|---|---|---|
+| **Transient** | The object exists in memory but JPA has no knowledge of it. No database row corresponds to it. | `new Jugador()` — object just created |
+| **Managed** | The `EntityManager` is tracking the instance. Any changes are detected by dirty checking and flushed on commit. | `em.persist(entity)` or `em.find(...)` |
+| **Detached** | The instance was previously managed but is no longer associated with an active `EntityManager`. Changes are NOT tracked. | `em.close()`, `em.detach(entity)`, or end of transaction scope |
+| **Removed** | The instance is scheduled for deletion. The database row will be deleted on the next flush/commit. | `em.remove(entity)` |
+
+## State transition diagram
+
+```
+  new Entity()
+      │
+      ▼
+ ┌──────────┐     em.persist()    ┌─────────┐
+ │Transient │ ──────────────────► │ Managed │
+ └──────────┘                     └─────────┘
+                                      │   ▲
+                          em.close()  │   │  em.merge(detached)
+                          em.detach() │   │
+                                      ▼   │
+                                  ┌──────────┐
+                                  │ Detached │
+                                  └──────────┘
+
+ ┌─────────┐     em.remove()     ┌─────────┐
+ │ Managed │ ──────────────────► │ Removed │
+ └─────────┘                     └─────────┘
+                                      │
+                                 commit()
+                                      │
+                                      ▼
+                              (row deleted from DB)
+```
+
+## Transient: before persist()
+
+A newly constructed entity is transient. It lives only in the JVM heap and has no corresponding database row.
+
+```java GestorCartas.java
+// crearJugadorAmbMazo() — Jugador is Transient here
+Jugador jugador = new Jugador();
+jugador.setNick(nick);
+jugador.setNivell(nivell);
+// jugador is still Transient — no DB row exists yet
+```
+
+At this point JPA ignores the object entirely. Calling `jugador.setNick("x")` will never touch the database.
+
+## Managed: inside an open EntityManager
+
+An entity becomes **managed** either by calling `em.persist()` on a transient instance, or by loading one from the database via `em.find()` or a JPQL query. While managed, every field change is automatically detected (see [dirty checking](/jpa/dirty-checking)).
+
+```java GestorCartas.java
+// After persist() — jugador is now Managed
+em.persist(jugador);
+em.getTransaction().commit();
+```
+
+```java GestorCartas.java
+// After em.find() — carta is Managed within this EM
+em.getTransaction().begin();
+Carta carta = em.find(Carta.class, idCarta);
+// carta is Managed — changes will be flushed on commit
+carta.setDescripcio(novaDescripcio);
+em.getTransaction().commit();
+```
+
+Managed entities are stored in the EntityManager's [L1 cache](/jpa/l1-cache), which guarantees identity within the same EM session.
+
+## Detached: after em.close()
+
+When an `EntityManager` is closed, all entities it was tracking become **detached**. Changes to detached entities are silently ignored by JPA — they must be re-associated via `em.merge()` before they can be persisted.
+
+This state is deliberately demonstrated in `actualitzarNomDetached()`:
+
+```java GestorCartas.java
+// actualitzarNomDetached() — lifecycle walkthrough
+public void actualitzarNomDetached(long idCarta, String nouNom) {
+    // 1. Entity is Managed inside this EM
+    Carta cartaDetached = em.find(Carta.class, idCarta);
+
+    // 2. EM closes → entity becomes Detached
+    em.close();
+
+    // 3. Change is made to a Detached entity — NOT tracked by JPA
+    cartaDetached.setNom(nouNom);
+
+    // 4. New EM opened; merge() re-attaches and syncs the changes
+    EntityManager nouEm = JPAUtil.getEntityManager();
+    nouEm.getTransaction().begin();
+    nouEm.merge(cartaDetached);
+    nouEm.getTransaction().commit();
+    nouEm.close();
+}
+```
+
+See [Detached entities and merge](/jpa/detached-merge) for a detailed step-by-step walkthrough.
+
+## Removed: after em.remove()
+
+Calling `em.remove()` on a managed entity transitions it to the **removed** state. The database row is deleted when the transaction commits.
+
+```java GestorCartas.java
+// eliminarCartaPerId() — entity transitions to Removed
+public void eliminarCartaPerId(long idCarta) {
+    em.getTransaction().begin();
+    Carta carta = em.find(Carta.class, idCarta);  // Managed
+    if (carta != null) {
+        em.remove(carta);                          // Removed
+        em.getTransaction().commit();              // DELETE executed
+        System.out.println("Carta eliminada de la BD.");
+    } else {
+        em.getTransaction().rollback();
+    }
+}
+```
+
+<Note>
+You can only call `em.remove()` on a **managed** entity. Passing a detached or transient instance throws an `IllegalArgumentException`.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="L1 cache" href="/jpa/l1-cache">
+    How the EntityManager identity map works and why the same ID always returns the same instance.
+  </Card>
+  <Card title="Detached entities and merge" href="/jpa/detached-merge">
+    Step-by-step walkthrough of em.merge() for detached entities.
+  </Card>
+</CardGroup>

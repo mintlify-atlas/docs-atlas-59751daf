@@ -1,0 +1,87 @@
+---
+title: "Introduction"
+description: "A Java JPA/ObjectDB demonstration project that models a Magic: The Gathering card database with polymorphic entities, CRUD operations, and advanced JPA lifecycle patterns."
+---
+
+# Magic ObjDB: The Poly Deck Engine
+
+Magic ObjDB: The Poly Deck Engine is a Java educational project that demonstrates advanced JPA (Java Persistence API) concepts using [ObjectDB](https://www.objectdb.com/) — an embedded, pure object-oriented database — as the persistence backend. The domain model is a Magic: The Gathering-inspired card game, giving a rich, real-world context for exploring inheritance, relationships, and entity lifecycle management.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build and run the engine in minutes with Maven
+  </Card>
+  <Card title="Data Model" icon="database" href="/data-model/overview">
+    Explore the polymorphic JPA entity hierarchy
+  </Card>
+  <Card title="JPA Concepts" icon="book" href="/jpa/persistence-config">
+    Deep dives into entity lifecycle, caching, and more
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/gestor-cartas">
+    Full reference for GestorCartas, LectorFicheros, and JPAUtil
+  </Card>
+</CardGroup>
+
+## What this project demonstrates
+
+<CardGroup cols={2}>
+  <Card title="Polymorphic JOINED Inheritance" icon="sitemap">
+    `Carta` is an abstract base entity. `Criatura`, `Terra`, and `Encanteri` each get their own joined table, demonstrating JPA's `InheritanceType.JOINED` strategy.
+  </Card>
+  <Card title="ObjectDB Object Database" icon="circle-nodes">
+    Uses ObjectDB 2.8.8 as the JPA provider — a pure Java, embedded object database with a standard `javax.persistence` interface and no SQL schema.
+  </Card>
+  <Card title="Entity Lifecycle Patterns" icon="arrows-spin">
+    Covers all four JPA entity states: transient, managed, detached, and removed — with real examples of dirty checking and explicit `merge()`.
+  </Card>
+  <Card title="L1 Cache Identity" icon="layer-group">
+    Demonstrates that calling `em.find()` twice with the same ID within the same `EntityManager` returns the **same Java instance**, not a copy.
+  </Card>
+  <Card title="Orphan Removal" icon="trash">
+    Removing a `Mazo` from a `Jugador`'s list automatically deletes the deck row on commit — no explicit `em.remove()` required.
+  </Card>
+  <Card title="JPQL Queries" icon="magnifying-glass">
+    Aggregate queries, path expressions across `OneToMany`/`ManyToMany` associations, and polymorphic `SELECT` across the inheritance hierarchy.
+  </Card>
+</CardGroup>
+
+## Project structure
+
+```
+src/main/java/com/mycompany/magic/objdb_the_poly_deck_engine/
+├── MagicObjDB_The_Poly_Deck_Engine.java   ← Console UI / main entry point
+├── manager/
+│   └── GestorCartas.java                  ← CRUD service layer
+├── model/
+│   ├── Carta.java                         ← Abstract base entity (@Inheritance JOINED)
+│   ├── CostMana.java                      ← @Embeddable mana cost value object
+│   ├── Criatura.java                      ← Creature card subtype
+│   ├── Encanteri.java                     ← Enchantment/spell card subtype
+│   ├── Terra.java                         ← Land card subtype
+│   ├── Mazo.java                          ← Deck aggregate
+│   ├── Jugador.java                       ← Player entity
+│   └── enums/
+│       ├── Color.java                     ← Mana color enum
+│       └── Raresa.java                    ← Card rarity enum
+└── utils/
+    ├── JPAUtil.java                       ← EntityManagerFactory singleton
+    └── LectorFicheros.java                ← Pipe-delimited file parser
+src/main/resources/
+├── META-INF/persistence.xml              ← JPA/ObjectDB configuration
+└── data/cartes.txt                       ← 15-card seed dataset
+```
+
+## Technology stack
+
+| Component | Technology |
+|-----------|-----------|
+| Language | Java 21 |
+| Build tool | Maven 3 |
+| Database | ObjectDB 2.8.8 (object-oriented, embedded) |
+| Persistence API | JPA 2 (`javax.persistence`) |
+| Transaction type | `RESOURCE_LOCAL` (manual `begin/commit/rollback`) |
+| Inheritance strategy | `InheritanceType.JOINED` |
+
+<Note>
+This project is designed for learning JPA concepts. The `persistence.xml` uses local file-based storage (`polydeck.odb`) and hard-coded `admin/admin` credentials — not suitable for production use as-is.
+</Note>

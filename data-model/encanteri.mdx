@@ -1,0 +1,117 @@
+---
+title: "Encanteri (enchantment/spell)"
+description: "JPA entity for spell and enchantment cards. Extends Carta with a spell type and instant flag."
+---
+
+`Encanteri` is a concrete `@Entity` that extends `Carta`. It covers both sorceries and enchantments — any non-creature, non-land card. An `Encanteri` has a free-form type string (e.g. `"Global"`, `"Aura"`, `"Maledicció"`) and a flag indicating whether it can be cast as an instant.
+
+## Inherited fields (from Carta)
+
+<ResponseField name="id" type="Long">
+  Auto-generated primary key inherited from `Carta`.
+</ResponseField>
+
+<ResponseField name="nom" type="String">
+  Card name.
+</ResponseField>
+
+<ResponseField name="descripcio" type="String">
+  Rules or flavour text. Up to 1000 characters.
+</ResponseField>
+
+<ResponseField name="raresa" type="Raresa">
+  Rarity: `COMUNA`, `INFREQÜENT`, `RARA`, or `MITICA`.
+</ResponseField>
+
+<ResponseField name="edicio" type="String">
+  Card set/edition.
+</ResponseField>
+
+<ResponseField name="cost" type="CostMana">
+  Mana cost to cast the spell, embedded inline in the `Carta` table.
+
+  <Expandable title="CostMana fields">
+    <ResponseField name="blanc" type="int">White mana `{W}`.</ResponseField>
+    <ResponseField name="blau" type="int">Blue mana `{U}`.</ResponseField>
+    <ResponseField name="negre" type="int">Black mana `{B}`.</ResponseField>
+    <ResponseField name="vermell" type="int">Red mana `{R}`.</ResponseField>
+    <ResponseField name="verd" type="int">Green mana `{G}`.</ResponseField>
+    <ResponseField name="incolor" type="int">Colorless mana `{C}`.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Own fields
+
+<ResponseField name="tipus" type="String">
+  The spell category. Not an enum — values seen in the seed data include `"Global"`, `"Aura"`, and `"Maledicció"`. Allows future types without schema changes.
+</ResponseField>
+
+<ResponseField name="esInstantani" type="boolean">
+  `true` if the spell can be cast at instant speed (during an opponent's turn, in response to other spells). `false` means it is a sorcery — it can only be cast during the player's main phase.
+</ResponseField>
+
+## Source code
+
+```java Encanteri.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.model;
+
+import javax.persistence.Entity;
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.enums.Raresa;
+
+@Entity
+public class Encanteri extends Carta {
+
+    private String tipus;
+    private boolean esInstantani;
+
+    public Encanteri() {
+        super();
+    }
+
+    public Encanteri(String nom, String descripcio, Raresa raresa, String edicio,
+                     CostMana cost, String tipus, boolean esInstantani) {
+        super(nom, descripcio, raresa, edicio, cost);
+        this.tipus = tipus;
+        this.esInstantani = esInstantani;
+    }
+
+    public String getTipus() { return tipus; }
+    public void setTipus(String tipus) { this.tipus = tipus; }
+
+    public boolean isEsInstantani() { return esInstantani; }
+    public void setEsInstantani(boolean esInstantani) { this.esInstantani = esInstantani; }
+}
+```
+
+## Example: Bola de Foc
+
+From `cartes.txt`, the _Fireball_ spell:
+
+```
+ENCANTERI|Bola de Foc|Explosió massiva que danya a l'enemic.|RARA|0,0,1,0,0,2|Global|false
+```
+
+| Field | Value |
+|-------|-------|
+| `nom` | Bola de Foc |
+| `descripcio` | Explosió massiva que danya a l'enemic. |
+| `raresa` | `RARA` |
+| `cost` | `{R}{C}{C}` — 1 Red + 2 Colorless |
+| `tipus` | `Global` |
+| `esInstantani` | `false` _(sorcery speed)_ |
+
+```java
+Encanteri bolaFoc = new Encanteri(
+    "Bola de Foc",
+    "Explosió massiva que danya a l'enemic.",
+    Raresa.RARA,
+    "Alpha",
+    new CostMana(0, 0, 1, 0, 0, 2), // blau, negre, vermell, verd, blanc, incolor
+    "Global",
+    false
+);
+```
+
+<Note>
+  `esInstantani = false` means this spell is cast at sorcery speed — only during your own main phase when the stack is empty.
+</Note>

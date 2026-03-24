@@ -1,80 +1,196 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: 'Quickstart'
+description: 'Get Magic ObjDB: The Poly Deck Engine running locally in minutes.'
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+Before you begin, make sure you have the following installed:
 
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+- **Java 21** or later (`java -version`)
+- **Maven 3** or later (`mvn -version`)
+- Internet access (Maven will download ObjectDB 2.8.8 from `https://m2.objectdb.com` on first build)
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  The application uses ObjectDB as its embedded JPA provider. No external database server is required — ObjectDB stores everything in a single file, `polydeck.odb`, created in your working directory at runtime.
 </Note>
+
+## Setup and run
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the project and navigate into the source directory:
+
+    ```bash
+    git clone <repository-url>
+    cd Magic-ObjDB_The_Poly_Deck_Engine
+    ```
+  </Step>
+
+  <Step title="Build with Maven">
+    Compile and package the application:
+
+    ```bash
+    mvn clean package
+    ```
+
+    Maven resolves the `com.objectdb:objectdb:2.8.8` dependency from the ObjectDB repository and produces a JAR under `target/`.
+
+    <Tip>
+      On first run, Maven downloads the ObjectDB artifact from `https://m2.objectdb.com`. Subsequent builds use the local cache and are significantly faster.
+    </Tip>
+  </Step>
+
+  <Step title="Run the application">
+    Launch the interactive console using the `exec` plugin:
+
+    ```bash
+    mvn exec:java
+    ```
+
+    This executes `com.mycompany.magic.objdb_the_poly_deck_engine.MagicObjDB_The_Poly_Deck_Engine`, the class configured as `exec.mainClass` in `pom.xml`.
+
+    On startup you will see:
+
+    ```
+    === ARRANCANT EL MOTOR POLY-DECK ===
+    ```
+
+    The application initialises a JPA `EntityManagerFactory` for the `PolyDeckPU` persistence unit defined in `src/main/resources/META-INF/persistence.xml`, and opens (or creates) the `polydeck.odb` ObjectDB file in the current directory.
+
+    <Warning>
+      Run `mvn exec:java` from the project root directory. The default card data path (`src/main/resources/data/cartes.txt`) is resolved relative to that working directory.
+    </Warning>
+  </Step>
+
+  <Step title="Navigate the main menu">
+    Once running, the application presents an interactive menu:
+
+    ```
+    ╔══════════════════════════════════════════════╗
+    ║                MENÚ PRINCIPAL                ║
+    ╠══════════════════════════════════════════════╣
+    ║  1. Operacions de Creació (CREATE)           ║
+    ║  2. Consultes i Llistats (READ)              ║
+    ║  3. Operacions d'Actualització (UPDATE)      ║
+    ║  4. Operacions d'Eliminació (DELETE)         ║
+    ║  0. Sortir                                   ║
+    ╚══════════════════════════════════════════════╝
+    ```
+
+    Enter the number for the operation you want to perform. Each option leads to a sub-menu described in the section below.
+  </Step>
+</Steps>
+
+## Menu reference
+
+<Tabs>
+  <Tab title="1 — CREATE">
+    The CREATE menu lets you populate the database with cards and set up players with decks.
+
+    | Option | Action | Description |
+    |--------|--------|-------------|
+    | 1 | Import cards from file | Wipes the current database, then parses `cartes.txt` and persists all `Criatura`, `Terra`, and `Encanteri` entities. Press Enter to use the default path `src/main/resources/data/cartes.txt`. |
+    | 2 | Create player and deck | Creates or retrieves a `Jugador` by nick, then creates a `Mazo` with the given name and assigns all currently stored cards to it. Requires at least 3 cards to be present. |
+
+    <Note>
+      Always run **option 1** first. Option 2 will refuse to proceed if fewer than 3 cards exist in the database.
+    </Note>
+
+    **Example flow:**
+
+    ```
+    Tria una opció: 1
+    Ruta del fitxer (Prem Enter per defecte: src/main/resources/data/cartes.txt):
+    ━━━━━━━━━━━━━━━━━━━━━━( PROCESSANT IMPORTACIÓ )━━━━━━━━━━━━━━━━━━━━━━━
+    ```
+
+    The bundled `cartes.txt` contains 15 cards across three types:
+
+    - **5 creatures** (`CRIATURA`) — e.g., `Drac de Foc` (5/5 flying Dragon, RARA), `Espectre de la Nit` (4/3 flying Spectre, MITICA)
+    - **5 lands** (`TERRA`) — one basic land per mana colour: `Muntanya Volcànica` (Red), `Illa de Cristall` (Blue), `Pantà Corrupte` (Black), `Bosc Ancestral` (Green), `Plana Daurada` (White)
+    - **5 enchantments** (`ENCANTERI`) — e.g., `Bola de Foc` (RARA, Global), `Judici Diví` (MITICA, Global)
+  </Tab>
+
+  <Tab title="2 — READ">
+    The READ menu provides five queries that demonstrate different JPA features.
+
+    | Option | Action | Description |
+    |--------|--------|-------------|
+    | 1 | List all cards | Fetches and prints every `Carta` entity in the database. |
+    | 2 | L1 cache test | Looks up a card by its numeric ID twice within the same `EntityManager` session to demonstrate that the second retrieval is served from the first-level (persistence context) cache without hitting the store. |
+    | 3 | Flying dark creatures query | Runs a JPQL query that returns the names of all `Criatura` entities that have `vola = true` and a black mana cost greater than zero. |
+    | 4 | Average creature strength for a player | Given a player nick, calculates the average `força` (power) of all creatures in that player's decks using a JPQL aggregate query. |
+    | 5 | Colorless expensive enchantments | Queries for `Encanteri` entities that have a non-zero colorless mana cost and zero cost in all five colours — i.e., purely colorless and costly spells. |
+
+    <Tip>
+      Option 2 is useful for understanding ObjectDB's first-level cache behaviour. The same entity object is returned on the second `find()` call without a round-trip to disk.
+    </Tip>
+  </Tab>
+
+  <Tab title="3 — UPDATE">
+    The UPDATE menu demonstrates two core JPA state-transition patterns.
+
+    | Option | Action | Description |
+    |--------|--------|-------------|
+    | 1 | Dirty Checking (managed state) | Fetches a `Carta` by ID within an active transaction, modifies its `descripcio` field in-place, and commits. JPA's dirty-checking mechanism detects the change automatically — no explicit `merge()` or `persist()` call is needed. |
+    | 2 | Merge (detached state) | Fetches a `Carta`, closes the `EntityManager` so the entity becomes detached, updates its `nom` field, then calls `merge()` on a new `EntityManager` to reattach and persist the change. |
+
+    <Note>
+      After a successful merge (option 2), the application automatically recreates the `EntityManager` to restore a clean persistence context for subsequent operations.
+    </Note>
+
+    **Example flow for dirty checking:**
+
+    ```
+    Tria una opció: 1
+    Introdueix l'ID de la Carta a modificar (Dirty Checking): 1
+    Nova descripció: Un drac llegendari que incendia muntanyes senceres.
+    ```
+  </Tab>
+
+  <Tab title="4 — DELETE">
+    The DELETE menu covers two JPA removal strategies.
+
+    | Option | Action | Description |
+    |--------|--------|-------------|
+    | 1 | Delete card by ID | Looks up a `Carta` by its numeric ID and calls `EntityManager.remove()` inside a transaction to permanently delete it from the store. |
+    | 2 | Orphan removal on deck | Removes a `Mazo` from a `Jugador`'s collection by index. Because the `Mazo` relationship is mapped with `orphanRemoval = true`, the removed deck entity is automatically deleted from the database when the transaction commits — without an explicit `remove()` call. |
+
+    <Warning>
+      Deleting a card (option 1) is irreversible. Re-import cards from file (CREATE › option 1) if you need to restore the original dataset.
+    </Warning>
+
+    **Example flow for orphan removal:**
+
+    ```
+    Tria una opció: 2
+    --- JUGADORS DISPONIBLES ---
+    ID: 1 | Nick: PlayerOne | Nivell: 10 | Mazos creats: 1
+    ----------------------------
+    Introdueix l'ID del Jugador propietari del mazo: 1
+    Introdueix l'índex del mazo a esborrar (ex: 0 pel primer): 0
+    ```
+  </Tab>
+</Tabs>
+
+## How data is stored
+
+The application writes a single ObjectDB file, `polydeck.odb`, in the directory where you run `mvn exec:java`. The persistence unit is named `PolyDeckPU` and is configured in `src/main/resources/META-INF/persistence.xml`:
+
+```xml
+<persistence-unit name="PolyDeckPU" transaction-type="RESOURCE_LOCAL">
+  <provider>com.objectdb.jpa.Provider</provider>
+  <properties>
+    <property name="javax.persistence.jdbc.url" value="polydeck.odb"/>
+    <property name="javax.persistence.jdbc.user" value="admin"/>
+    <property name="javax.persistence.jdbc.password" value="admin"/>
+  </properties>
+</persistence-unit>
+```
+
+The `JPAUtil` singleton initialises the `EntityManagerFactory` once at startup and provides `EntityManager` instances to the `GestorCartas` service layer. The factory is closed cleanly on exit.
+
+<Tip>
+  To reset the database entirely, delete `polydeck.odb` from the project root and re-run the import (CREATE › option 1).
+</Tip>

@@ -1,0 +1,174 @@
+---
+title: "JPAUtil"
+description: "Singleton factory for JPA EntityManagerFactory lifecycle management in Magic ObjDB: The Poly Deck Engine."
+---
+
+## Overview
+
+**Package:** `com.mycompany.magic.objdb_the_poly_deck_engine.utils`
+
+`JPAUtil` manages the application-wide `EntityManagerFactory` (EMF). Because creating an EMF is expensive — it reads `persistence.xml`, validates the schema, and sets up connection pooling — `JPAUtil` creates it exactly once via a static initializer block and exposes it through two static methods.
+
+The persistence unit name is **`PolyDeckPU`**, which must match the `<persistence-unit name="...">` attribute in `persistence.xml`.
+
+---
+
+## Singleton Pattern
+
+`JPAUtil` uses the **static field + static initializer block** pattern:
+
+```java
+private static final EntityManagerFactory emf;
+
+static {
+    emf = Persistence.createEntityManagerFactory("PolyDeckPU");
+}
+```
+
+- The `emf` field is `private static final` — there is one instance for the entire JVM lifetime.
+- The `static {}` block runs **once**, the first time the class is loaded by the classloader.
+- If initialization fails (wrong persistence unit name, missing driver, etc.) an `ExceptionInInitializerError` is thrown, halting startup.
+
+<Note>
+  You never instantiate `JPAUtil`. All interaction is through its static methods.
+</Note>
+
+---
+
+## Methods
+
+### `getEntityManager()`
+
+```java
+public static EntityManager getEntityManager()
+```
+
+Creates and returns a **new** `EntityManager` from the shared `EntityManagerFactory`. Each call produces an independent persistence context.
+
+<ResponseField name="return" type="EntityManager">
+  A fresh, open `EntityManager`. The caller is responsible for closing it (typically in a `finally` block or try-with-resources).
+</ResponseField>
+
+<Warning>
+  Calling `getEntityManager()` after `shutdown()` has been called will throw an `IllegalStateException` because the underlying `EntityManagerFactory` is closed.
+</Warning>
+
+```java Example
+EntityManager em = JPAUtil.getEntityManager();
+try {
+    GestorCartas gestor = new GestorCartas(em);
+    gestor.importarCartes("src/main/resources/data/cartes.txt");
+} finally {
+    if (em != null && em.isOpen()) {
+        em.close();
+    }
+}
+```
+
+---
+
+### `shutdown()`
+
+```java
+public static void shutdown()
+```
+
+Closes the `EntityManagerFactory`. This releases all JDBC connections, caches, and other resources held by JPA/ObjectDB.
+
+**Call `shutdown()` exactly once, at application exit.** The canonical place is inside a `finally` block in `main()`.
+
+**Side effects:** After this call the `emf` is closed. Any subsequent call to `getEntityManager()` will throw `IllegalStateException`.
+
+<Warning>
+  Never call `shutdown()` while `EntityManager` instances obtained from this factory are still in use. Close all open `EntityManager` instances first.
+</Warning>
+
+```java Example — correct shutdown sequence
+public static void main(String[] args) {
+    EntityManager em = JPAUtil.getEntityManager();
+    GestorCartas gestor = new GestorCartas(em);
+    try {
+        // ... application logic ...
+    } finally {
+        if (em != null && em.isOpen()) {
+            em.close();          // 1. Close the EntityManager first
+        }
+        JPAUtil.shutdown();      // 2. Then close the factory
+    }
+}
+```
+
+---
+
+## Usage Example from `MagicObjDB_The_Poly_Deck_Engine.java`
+
+The main application class shows the complete lifecycle pattern:
+
+```java MagicObjDB_The_Poly_Deck_Engine.java
+public static void main(String[] args) {
+    System.out.println("=== ARRANCANT EL MOTOR POLY-DECK ===");
+
+    // 1. Obtain a new EntityManager from the singleton factory
+    EntityManager em = JPAUtil.getEntityManager();
+    GestorCartas gestor = new GestorCartas(em);
+
+    try {
+        // ... interactive menu loop ...
+    } catch (Exception e) {
+        System.err.println("Error crític: " + e.getMessage());
+    } finally {
+        // 2. Close the EntityManager before shutting down the factory
+        if (em != null && em.isOpen()) {
+            em.close();
+        }
+        // 3. Shut down the EntityManagerFactory — called once, at exit
+        JPAUtil.shutdown();
+        System.out.println("\n=== MOTOR APAGAT CORRECTAMENT ===");
+    }
+}
+```
+
+<Note>
+  When `actualitzarNomDetached()` in `GestorCartas` closes the original `EntityManager` internally, the main method must call `JPAUtil.getEntityManager()` again and create a new `GestorCartas` instance before continuing to use the service layer.
+</Note>
+
+---
+
+## Full Source
+
+```java JPAUtil.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.utils;
+
+import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.Persistence;
+
+public class JPAUtil {
+
+    // Application-wide EntityManagerFactory — equivalent to Hibernate's SessionFactory
+    private static final EntityManagerFactory emf;
+
+    // Static initializer: runs once when the class is first loaded
+    static {
+        try {
+            // "PolyDeckPU" must match the <persistence-unit name="..."> in persistence.xml exactly
+            emf = Persistence.createEntityManagerFactory("PolyDeckPU");
+        } catch (Throwable ex) {
+            System.err.println("Error catastròfic iniciant l'EntityManagerFactory: " + ex);
+            throw new ExceptionInInitializerError(ex);
+        }
+    }
+
+    // Returns a new EntityManager for the caller to use and close.
+    public static EntityManager getEntityManager() {
+        return emf.createEntityManager();
+    }
+
+    // Closes the global factory on application shutdown.
+    public static void shutdown() {
+        if (emf != null && emf.isOpen()) {
+            emf.close();
+        }
+    }
+}
+```

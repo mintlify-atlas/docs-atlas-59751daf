@@ -1,0 +1,103 @@
+---
+title: "Detached entities and merge"
+description: "What happens when a JPA entity outlives its EntityManager, and how em.merge() re-attaches a detached entity so its changes can be persisted."
+---
+
+An entity becomes **detached** when the `EntityManager` that loaded it is closed or when the entity is explicitly evicted from the persistence context. A detached entity still holds its data in memory, but JPA is no longer tracking it — any changes you make are silently ignored unless you explicitly re-attach it via `em.merge()`.
+
+<Warning>
+Changes made to a **detached** entity are completely invisible to JPA. There is no error, no exception, and no warning. If you modify a detached entity and never call `em.merge()`, those changes are simply lost when the JVM discards the object.
+</Warning>
+
+## actualitzarNomDetached() — step by step
+
+The `actualitzarNomDetached()` method in `GestorCartas` is the canonical demonstration of the detach/merge pattern:
+
+```java GestorCartas.java
+// Tasca B: Demostració de Merge amb objecte Detached
+public void actualitzarNomDetached(long idCarta, String nouNom) {
+    // Step 1: Load entity — it is Managed inside this EM
+    Carta cartaDetached = em.find(Carta.class, idCarta);
+    if (cartaDetached == null) {
+        System.out.println("No s'ha trobat cap carta amb aquest ID.");
+        return;
+    }
+
+    // Step 2: Close the EM — cartaDetached is now Detached
+    em.close();
+
+    // Step 3: Modify the detached entity — JPA does NOT track this change
+    cartaDetached.setNom(nouNom);
+
+    // Step 4: Open a new EntityManager
+    EntityManager nouEm = JPAUtil.getEntityManager();
+
+    // Step 5: merge() re-attaches the detached entity
+    nouEm.getTransaction().begin();
+    nouEm.merge(cartaDetached);
+
+    // Step 6: Commit — the merged (managed) copy is flushed to the database
+    nouEm.getTransaction().commit();
+    nouEm.close();
+
+    System.out.println("Carta actualitzada via Merge.");
+}
+```
+
+<Steps>
+  <Step title="Open EM and find entity (now Managed)">
+    `em.find(Carta.class, idCarta)` loads the entity from the database and registers it as managed inside `this.em`. JPA begins tracking its state.
+  </Step>
+  <Step title="Close the EM — entity becomes Detached">
+    `em.close()` destroys the persistence context. Every entity that was managed by `em` (including `cartaDetached`) transitions to the **Detached** state. The `cartaDetached` variable still references the Java object in memory, but JPA no longer watches it.
+  </Step>
+  <Step title="Modify the detached entity">
+    `cartaDetached.setNom(nouNom)` updates the in-memory field. This is a plain Java setter call — no JPA machinery is involved. The change exists only in the heap.
+  </Step>
+  <Step title="Open a new EntityManager">
+    `JPAUtil.getEntityManager()` creates a fresh `EntityManager` with an empty persistence context. `cartaDetached` is still detached with respect to this new EM.
+  </Step>
+  <Step title="Call em.merge() — JPA loads a fresh managed copy and applies changes">
+    `nouEm.merge(cartaDetached)` performs the following internally:
+    1. Looks up the entity in the database by the detached object's primary key.
+    2. Creates (or reuses) a **managed copy** inside `nouEm`.
+    3. Copies all field values from `cartaDetached` onto the managed copy.
+    4. Returns the managed copy (the return value is not used here, but it is the managed instance).
+
+    Note: `cartaDetached` itself **remains detached** after the call; only the returned copy is managed.
+  </Step>
+  <Step title="Commit — changes are persisted">
+    `nouEm.getTransaction().commit()` flushes the managed copy (which now holds `nouNom`) to the database via an `UPDATE` statement, then commits the transaction.
+  </Step>
+</Steps>
+
+## Detach vs. dirty checking
+
+| Scenario | Tracking | How to persist changes |
+|---|---|---|
+| Entity loaded via `em.find()`, EM still open | Tracked (dirty checking active) | Just `commit()` |
+| Entity after `em.close()` | Not tracked (detached) | `em.merge()` in a new EM, then `commit()` |
+| Entity after `em.detach(entity)` | Not tracked (detached) | `em.merge()` in same or new EM, then `commit()` |
+
+## The return value of merge()
+
+A common mistake is to continue using the original detached reference after `merge()`. The correct pattern is:
+
+```java
+// Wrong — managedCarta is the managed copy, originalCarta is still detached
+Carta managedCarta = em.merge(originalCarta);
+originalCarta.setNom("new name");   // silently ignored — still detached!
+
+// Correct — work with the returned managed instance
+Carta managedCarta = em.merge(originalCarta);
+managedCarta.setNom("new name");    // tracked — will be flushed on commit
+```
+
+<CardGroup cols={2}>
+  <Card title="Entity lifecycle" href="/jpa/entity-lifecycle">
+    Full overview of the Transient, Managed, Detached, and Removed states.
+  </Card>
+  <Card title="Dirty checking" href="/jpa/dirty-checking">
+    How JPA automatically flushes changes for managed entities without merge().
+  </Card>
+</CardGroup>

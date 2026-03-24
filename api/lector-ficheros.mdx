@@ -1,0 +1,237 @@
+---
+title: "LectorFicheros"
+description: "Utility class for parsing pipe-delimited card data files into Carta object hierarchies."
+---
+
+## Overview
+
+**Package:** `com.mycompany.magic.objdb_the_poly_deck_engine.utils`
+
+`LectorFicheros` is a stateless utility class with a single public entry point: `llegirCartes()`. It reads a plain-text file where each line encodes one Magic card, parses the pipe-delimited fields, and returns a list of polymorphic `Carta` instances (`Criatura`, `Terra`, or `Encanteri`).
+
+All methods are `static`; the class is never instantiated.
+
+---
+
+## File Format
+
+Each card occupies one logical line (physical lines may be wrapped — see [Multi-line descriptions](#multi-line-descriptions) below). Fields are separated by the pipe character `|`. Blank lines and lines beginning with `#` are treated as comments and skipped.
+
+The first field determines the card type and which remaining fields are expected.
+
+### CRIATURA
+
+```
+CRIATURA | nom | descripcio | raresa | cost | forca | resistencia | tipusCriatura | vola
+```
+
+| Position | Field | Type | Notes |
+|---|---|---|---|
+| 0 | `CRIATURA` | literal | Card-type discriminator |
+| 1 | `nom` | String | Card name |
+| 2 | `descripcio` | String | Flavour / rules text |
+| 3 | `raresa` | String | One of `COMUN`, `INCOMUN`, `RAR`, `MITIC` (case-insensitive) |
+| 4 | `cost` | String | Mana cost — comma-separated integers: `negre,vermell,verd,blanc,blau,incolor` |
+| 5 | `forca` | int | Power value |
+| 6 | `resistencia` | int | Toughness value |
+| 7 | `tipusCriatura` | String | Creature subtype (e.g. `"Drac"`) |
+| 8 | `vola` | boolean | `true` / `false` |
+
+### TERRA
+
+```
+TERRA | nom | descripcio | raresa | color | esTap
+```
+
+| Position | Field | Type | Notes |
+|---|---|---|---|
+| 0 | `TERRA` | literal | Card-type discriminator |
+| 1 | `nom` | String | Card name |
+| 2 | `descripcio` | String | Flavour / rules text |
+| 3 | `raresa` | String | Rarity value |
+| 4 | `color` | String | One of the `Color` enum values (case-insensitive) |
+| 5 | `esTap` | boolean | Whether the land enters tapped |
+
+<Note>
+  `Terra` cards receive a zero-cost `CostMana(0,0,0,0,0,0)` automatically — the mana-cost field is not present in the file for this type.
+</Note>
+
+### ENCANTERI
+
+```
+ENCANTERI | nom | descripcio | raresa | cost | tipus | esInstantani
+```
+
+| Position | Field | Type | Notes |
+|---|---|---|---|
+| 0 | `ENCANTERI` | literal | Card-type discriminator |
+| 1 | `nom` | String | Card name |
+| 2 | `descripcio` | String | Flavour / rules text |
+| 3 | `raresa` | String | Rarity value |
+| 4 | `cost` | String | Mana cost — same comma-separated format as `CRIATURA` |
+| 5 | `tipus` | String | Enchantment subtype |
+| 6 | `esInstantani` | boolean | Whether the spell can be cast as an instant |
+
+### Mana cost string format
+
+The `cost` field for `CRIATURA` and `ENCANTERI` is a comma-separated string of six integers:
+
+```
+negre, vermell, verd, blanc, blau, incolor
+```
+
+Example: `"2,0,0,0,1,0"` → 2 black, 0 red, 0 green, 0 white, 1 blue, 0 colorless.
+
+### Multi-line descriptions
+
+If a description is too long to fit on one physical line in the file, it can be split across multiple lines. Any line that does **not** start with `CRIATURA`, `TERRA`, or `ENCANTERI` is treated as a continuation of the previous card's record and is appended (with a space) to the accumulating line buffer.
+
+```
+CRIATURA | Ombra Espectral | Quan ataca, descarta una carta
+de la mà del teu oponent. | INCOMUN | 3,0,0,0,0,0 | 2 | 1 | Esperit | true
+```
+
+---
+
+## Public API
+
+### `llegirCartes(String rutaArxiu)`
+
+```java
+public static List<Carta> llegirCartes(String rutaArxiu)
+```
+
+Opens the file at `rutaArxiu`, iterates over its lines, and returns a list of fully constructed `Carta` subclass instances.
+
+<ParamField path="rutaArxiu" type="String" required>
+  Filesystem path to the pipe-delimited card data file. Relative paths are resolved from the JVM working directory.
+</ParamField>
+
+<ResponseField name="return" type="List&lt;Carta&gt;">
+  A list of `Carta` instances (`Criatura`, `Terra`, or `Encanteri`). The list is empty if the file is empty, contains only comments, or cannot be opened.
+</ResponseField>
+
+**Error handling:**
+- `IOException` (e.g. file not found): logged to stderr; returns an empty list.
+- Malformed lines (bad enum value, wrong field count, non-numeric integer field): propagate as unchecked exceptions from `valueOf()` / `parseInt()` — they are not silently swallowed.
+- Unknown card type: throws `IllegalArgumentException` with the unrecognised type string.
+
+<Note>
+  The edition field is **hardcoded** to `"Core Set 2026"` for every card parsed by this class, regardless of what the file contains.
+</Note>
+
+```java Example usage
+List<Carta> cartes = LectorFicheros.llegirCartes("src/main/resources/data/cartes.txt");
+System.out.println("Parsed " + cartes.size() + " cards.");
+```
+
+---
+
+## Internal Methods (conceptual)
+
+These methods are `private` and not part of the public API. They are described here for reference.
+
+**`parsejarLinia(String línia)`** — Splits a fully accumulated logical line on `|`, trims each token, reads the type discriminator at index 0, and delegates to the appropriate constructor (`Criatura`, `Terra`, or `Encanteri`). Throws `IllegalArgumentException` for unknown types.
+
+**`parsejarCost(String costString)`** — Splits the comma-separated mana-cost string into six integers and constructs a `CostMana` value object. The field order in the string is `negre, vermell, verd, blanc, blau, incolor`, which is remapped to the `CostMana(blanc, blau, negre, vermell, verd, incolor)` constructor signature internally.
+
+---
+
+## Full Source
+
+```java LectorFicheros.java
+package com.mycompany.magic.objdb_the_poly_deck_engine.utils;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.Carta;
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.CostMana;
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.Criatura;
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.Encanteri;
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.Terra;
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.enums.Color;
+import com.mycompany.magic.objdb_the_poly_deck_engine.model.enums.Raresa;
+
+public class LectorFicheros {
+
+    public static List<Carta> llegirCartes(String rutaArxiu) {
+        List<Carta> cartesLlegides = new ArrayList<>();
+
+        try (BufferedReader br = new BufferedReader(new FileReader(rutaArxiu))) {
+            String línia;
+            String líniaAcumulada = "";
+
+            while ((línia = br.readLine()) != null) {
+                línia = línia.trim();
+
+                if (línia.startsWith("#") || línia.isEmpty()) {
+                    continue;
+                }
+
+                if (línia.startsWith("CRIATURA") || línia.startsWith("TERRA") || línia.startsWith("ENCANTERI")) {
+                    if (!líniaAcumulada.isEmpty()) {
+                        cartesLlegides.add(parsejarLinia(líniaAcumulada));
+                    }
+                    líniaAcumulada = línia;
+                } else {
+                    líniaAcumulada += " " + línia;
+                }
+            }
+
+            if (!líniaAcumulada.isEmpty()) {
+                cartesLlegides.add(parsejarLinia(líniaAcumulada));
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error físic llegint el fitxer: " + e.getMessage());
+        }
+
+        return cartesLlegides;
+    }
+
+    private static Carta parsejarLinia(String línia) {
+        String[] dades = línia.split("\\|");
+        for (int i = 0; i < dades.length; i++) {
+            dades[i] = dades[i].trim();
+        }
+
+        String tipus = dades[0];
+        String nom = dades[1];
+        String desc = dades[2];
+        Raresa raresa = Raresa.valueOf(dades[3].toUpperCase());
+        String edicioDefecte = "Core Set 2026";
+
+        switch (tipus) {
+            case "CRIATURA" -> {
+                return new Criatura(nom, desc, raresa, edicioDefecte, parsejarCost(dades[4]),
+                        Integer.parseInt(dades[5]), Integer.parseInt(dades[6]),
+                        dades[7], Boolean.parseBoolean(dades[8]));
+            }
+            case "TERRA" -> {
+                return new Terra(nom, desc, raresa, edicioDefecte, new CostMana(0,0,0,0,0,0),
+                        Color.valueOf(dades[4].toUpperCase()), Boolean.parseBoolean(dades[5]));
+            }
+            case "ENCANTERI" -> {
+                return new Encanteri(nom, desc, raresa, edicioDefecte,
+                        parsejarCost(dades[4]), dades[5], Boolean.parseBoolean(dades[6]));
+            }
+            default -> throw new IllegalArgumentException("Tipus de carta desconegut: " + tipus);
+        }
+    }
+
+    private static CostMana parsejarCost(String costString) {
+        String[] c = costString.split(",");
+        // Field order in file: negre, vermell, verd, blanc, blau, incolor
+        // CostMana constructor:  blanc, blau,   negre, vermell, verd, incolor
+        return new CostMana(
+            Integer.parseInt(c[4].trim()), Integer.parseInt(c[0].trim()),
+            Integer.parseInt(c[1].trim()), Integer.parseInt(c[2].trim()),
+            Integer.parseInt(c[3].trim()), Integer.parseInt(c[5].trim())
+        );
+    }
+}
+```
